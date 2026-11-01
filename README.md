@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica schematic reader and auto-builder for Minecraft Java 26.2.
 
-## Current status — 0.4.0-alpha.1
+## Current status — 0.5.0-alpha.1
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops auto-build.
@@ -14,7 +14,7 @@ EYYOBUILD is a client-side Litematica schematic reader and auto-builder for Mine
 - Builds at the selected Litematica placement, not at the player's feet.
 - **Creative:** if the player is allowed to fly, EYYOBUILD enables flight for the active build session and automatically restores the previous non-flying state when stopped.
 - **Survival/adventure:** uses safe ground-based pathfinding, jumping up one-block steps and walking through passable decorations. It does not grant flight.
-- Ground path search is bounded and uses collision shapes, solid support and clear head/feet space. It will not deliberately walk into unsupported air.
+- Ground path search uses A* costs and collision shapes, solid support and clear head/feet space. It prefers shorter, lower-risk routes and will not deliberately walk into unsupported air.
 - When the build is stopped, EYYOBUILD releases only the movement keys and flight state it changed.
 - Searches all 36 main-inventory slots for required blocks. If a block is in the main inventory, it is swapped into an empty hotbar slot (or the selected hotbar slot if full) and selected automatically.
 - If a required block is nowhere in the inventory, that schematic position is skipped and the builder continues; missing materials no longer freeze the build at one row.
