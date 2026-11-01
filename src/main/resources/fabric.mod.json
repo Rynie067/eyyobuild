@@ -3,7 +3,7 @@
   "id": "eyyobuild",
   "version": "${version}",
   "name": "EYYOBUILD",
-  "description": "A Litematica schematic assistant for Minecraft 26.2.",
+  "description": "Litematica schematic reader and visible single-player auto-builder for Minecraft 26.2.",
   "environment": "client",
   "entrypoints": {
     "client": [

@@ -1,32 +1,49 @@
 # EYYOBUILD
 
-EYYOBUILD is a client-side schematic and manual build-assistance project for Minecraft Java 26.2.
+EYYOBUILD is a client-side Litematica schematic reader and visible auto-builder for Minecraft Java 26.2.
 
-## Current status — 0.1.2-alpha
+## Current status — 0.2.0-alpha.1
 
-- Fabric 26.2 / Java 25 project setup.
+- Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings.
 - In-game schematic selection screen.
 - Scans the game's `schematics/` folder for `.litematic` files.
-- Reads compressed Litematica NBT metadata and displays schematic dimensions, regions and palette sizes.
-- A visible manual-assistance session can be started or paused from either the UI or its key.
+- Reads Litematica region Position/Size compounds, palettes, block properties and packed BlockStates.
+- Decodes schematic block coordinates (X-fastest, then Z, then Y) and normalizes multi-region layouts.
+- Shows schematic dimensions, region count and the number of non-air blocks to place.
+- Includes a visible single-player build executor with walking, jump-step handling, sneak placement, hotbar block selection and obstruction breaking.
+- Stops when a required block is missing, a block entity would be damaged, the world closes, or no safe path can be found.
 
 ## Controls
 
 | Action | Default key |
 |---|---|
 | Open EYYOBUILD UI | B |
-| Start / stop manual-assistance session | H |
+| Start / stop auto-build | H |
 
-Both keys can be changed in **Options → Controls → Key Binds → EYYOBUILD**. There are no separate refresh, previous, or next keybinds: those actions are all inside the UI.
+Both keys can be changed in **Options → Controls → Key Binds → EYYOBUILD**. There are no extra refresh or navigation keybinds; those actions are inside the UI.
 
 ## Schematic setup
 
 1. Launch Minecraft once with EYYOBUILD installed.
-2. Place your `.litematic` files into the game's `schematics/` folder.
-3. Press **B** to open the interface.
-4. Use Previous / Next / Refresh to select a schematic.
-5. Press **H** or the UI's Start button to toggle the manual-assistance session.
+2. Put your `.litematic` files into the game's `schematics/` folder.
+3. Press **B** and choose a schematic.
+4. Stand at the intended starting corner and face the direction in which the schematic should extend.
+5. Keep the required block items in your hotbar.
+6. Press **H** or the UI's **İnşaatı başlat** button.
+7. Press **H** again to stop at any time.
+
+The schematic origin is placed one block in front of the player. Build order is bottom-up. Movement uses normal client movement keys and interactions use the normal block interaction API.
+
+## Important limitations
+
+- **Auto-build is single-player only.** It will not start on multiplayer servers and does not bypass anti-cheat or server rules.
+- The navigation system handles simple, walkable ground and one-block steps. It is not a full parkour, scaffold, swimming, ladder or flying pathfinder.
+- Required blocks must be in the hotbar. The mod pauses and identifies a missing item instead of silently substituting another block.
+- Block IDs and palette properties are decoded. Vanilla placement determines some directional/shape properties; complex blocks such as redstone, rails, doors, beds, waterlogged blocks and tile-entity contents may need manual correction.
+- Existing block entities (chests, barrels, furnaces, etc.) are protected from automatic breaking.
+- Large schematics are limited to 8 million decoded positions to avoid excessive memory usage.
+- This alpha has not been integration-tested in a live Minecraft world. Test on a backup copy of a single-player world first.
 
 ## Build
 
@@ -36,10 +53,10 @@ Requirements: JDK 25 and Gradle 9.5.1.
 gradle build
 ```
 
-The mod JAR is written to `build/libs/`. GitHub Actions builds the project after pushes and uploads the JAR as a workflow artifact.
+The mod JAR is written to `build/libs/`. GitHub Actions builds pushes and creates a GitHub Release when a `v*` tag is pushed.
 
-## Important feature boundary
+## Versioning
 
-This alpha provides schematic discovery, metadata display, and a visible manual-assistance session state. It does **not** place blocks automatically yet, decode every region's packed block-state array for a placement preview, or integrate with Litematica's live placement manager. The H key does not run a macro.
-
-EYYOBUILD is not designed to hide automation, bypass anti-cheat, spoof player input, or evade server rules. Future placement features must be tested only in single-player or explicitly authorized environments.
+- Tiny bug fixes: increment the patch component.
+- Feature additions: increment the minor component.
+- Breaking or major milestones: increment the major component.

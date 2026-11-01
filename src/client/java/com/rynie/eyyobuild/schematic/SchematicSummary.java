@@ -11,10 +11,12 @@ public record SchematicSummary(
         int length,
         long totalBlocks,
         List<RegionSummary> regions,
+        List<SchematicBlock> blocks,
         String error
 ) {
     public SchematicSummary {
         regions = List.copyOf(regions);
+        blocks = List.copyOf(blocks);
     }
 
     public boolean readable() {
@@ -25,12 +27,7 @@ public record SchematicSummary(
         return new SchematicSummary(
                 path,
                 path.getFileName() == null ? path.toString() : path.getFileName().toString(),
-                0,
-                0,
-                0,
-                0L,
-                List.of(),
-                message
+                0, 0, 0, 0L, List.of(), List.of(), message
         );
     }
 
