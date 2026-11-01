@@ -11,8 +11,11 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.lang.reflect.Method;
@@ -191,12 +194,27 @@ public final class BuildEngine {
             return;
         }
 
-        if (client.player.distanceToSqr(Vec3.atCenterOf(target)) > REACH_SQUARED) {
+        Support support = null;
+        if (existing.isAir()) {
+            if (!hasAdjacentSupport(client, target)) {
+                releaseAutomationInput(client);
+                status = "Havaya blok koyma kapalı: " + target.toShortString()
+                        + " için önce komşu sağlam bir destek bloğu gerekiyor.";
+                return;
+            }
+
+            support = findSupport(client, target, client.player.getEyePosition());
+            if (support == null) {
+                moveTowardTarget(client, target);
+                status = "Görüş hattında ve normal menzilde destek aranıyor...";
+                return;
+            }
+        } else if (client.player.getEyePosition().distanceToSqr(Vec3.atCenterOf(target)) > REACH_SQUARED) {
             moveTowardTarget(client, target);
             return;
         }
 
-        // Within interaction reach: stop automated movement, but keep the build session active.
+        // Within normal interaction reach: stop automated movement, but keep the build session active.
         releaseAutomationInput(client);
         resetPath();
 
@@ -211,10 +229,24 @@ public final class BuildEngine {
                 active = false;
                 return;
             }
+
+            if (!aimAt(client, Vec3.atCenterOf(target))) {
+                status = "Kırılacak bloğa bakılıyor...";
+                return;
+            }
+
+            HitResult aimedResult = client.player.pick(4.5D, 1.0F, false);
+            if (!(aimedResult instanceof BlockHitResult aimedBlock)
+                    || aimedBlock.getType() != HitResult.Type.BLOCK
+                    || !aimedBlock.getBlockPos().equals(target)) {
+                status = "Blok doğrudan nişangâhta değil; kırma yapılmadı.";
+                return;
+            }
+
             boolean destroyed = client.gameMode.destroyBlock(target);
             if (destroyed) actionCooldownTicks = BuildSettings.getActionDelayTicks();
             status = destroyed
-                    ? "Yanlış blok kaldırılıyor: " + target.toShortString()
+                    ? "Yanlış blok normal menzilde kırılıyor: " + target.toShortString()
                     : "Blok kırılamadı; sunucu işlemi reddetmiş olabilir.";
             if (!destroyed) active = false;
             return;
@@ -231,27 +263,68 @@ public final class BuildEngine {
             return;
         }
 
-        Support support = findSupport(client, target);
-        if (support == null) {
-            status = "Havada desteksiz blok: " + target.toShortString()
-                    + ". İlk blok için komşu sağlam bir destek bloğu gerekir.";
+        client.player.getInventory().setSelectedSlot(hotbarSlot);
+
+        if (!aimAt(client, support.hitLocation())) {
+            status = "Destek bloğuna bakılıyor...";
             return;
         }
 
-        client.player.getInventory().setSelectedSlot(hotbarSlot);
-        float originalYaw = client.player.getYRot();
-        float placementYaw = yawForFacing(schematicBlock.properties().get("facing"));
-        try {
-            if (!Float.isNaN(placementYaw)) client.player.setYRot(placementYaw);
-            BlockHitResult hit = new BlockHitResult(
-                    support.hitLocation(), support.clickedFace(), support.blockPos(), false
-            );
-            client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit);
-            actionCooldownTicks = BuildSettings.getActionDelayTicks();
-            status = "Blok yerleştiriliyor: " + target.toShortString();
-        } finally {
-            client.player.setYRot(originalYaw);
+        // Use the player's real crosshair ray. No synthetic hit result or air placement.
+        HitResult aimedResult = client.player.pick(4.5D, 1.0F, false);
+        if (!(aimedResult instanceof BlockHitResult aimedBlock)
+                || aimedBlock.getType() != HitResult.Type.BLOCK
+                || !aimedBlock.getBlockPos().equals(support.blockPos())
+                || aimedBlock.getDirection() != support.clickedFace()) {
+            status = "Destek bloğu nişangâhta değil; yerleştirme yapılmadı.";
+            return;
         }
+
+        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, aimedBlock);
+        actionCooldownTicks = BuildSettings.getActionDelayTicks();
+        status = "Bloka bakarak normal yerleştirme: " + target.toShortString();
+    }
+
+    /**
+     * Rotates the real player view toward a world-space point.
+     * The view remains on the target so the subsequent vanilla ray trace and
+     * normal block interaction agree about what is being clicked.
+     */
+    private static boolean aimAt(Minecraft client, Vec3 point) {
+        Vec3 eye = client.player.getEyePosition();
+        double dx = point.x - eye.x;
+        double dy = point.y - eye.y;
+        double dz = point.z - eye.z;
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+
+        float targetYaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0D);
+        float targetPitch = (float) -Math.toDegrees(Math.atan2(dy, horizontal));
+        targetPitch = Math.max(-90.0F, Math.min(90.0F, targetPitch));
+
+        float nextYaw = stepAngle(client.player.getYRot(), targetYaw, 35.0F);
+        float nextPitch = stepLinear(client.player.getXRot(), targetPitch, 25.0F);
+        client.player.setYRot(nextYaw);
+        client.player.setXRot(nextPitch);
+
+        return Math.abs(wrapDegrees(targetYaw - nextYaw)) < 0.01F
+                && Math.abs(targetPitch - nextPitch) < 0.01F;
+    }
+
+    private static float stepAngle(float current, float target, float maxStep) {
+        float delta = wrapDegrees(target - current);
+        return current + Math.max(-maxStep, Math.min(maxStep, delta));
+    }
+
+    private static float stepLinear(float current, float target, float maxStep) {
+        float delta = target - current;
+        return current + Math.max(-maxStep, Math.min(maxStep, delta));
+    }
+
+    private static float wrapDegrees(float degrees) {
+        float wrapped = degrees % 360.0F;
+        if (wrapped >= 180.0F) wrapped -= 360.0F;
+        if (wrapped < -180.0F) wrapped += 360.0F;
+        return wrapped;
     }
 
     private static void enableCreativeFlightIfAllowed(Minecraft client) {
@@ -406,8 +479,9 @@ public final class BuildEngine {
     }
 
     private static boolean isBuildStandPosition(Minecraft client, BlockPos feet, BlockPos target) {
-        return isWalkable(client, feet)
-                && Vec3.atCenterOf(feet).distanceToSqr(Vec3.atCenterOf(target)) <= REACH_SQUARED;
+        if (!isWalkable(client, feet)) return false;
+        Vec3 eye = new Vec3(feet.getX() + 0.5D, feet.getY() + 1.62D, feet.getZ() + 0.5D);
+        return findSupport(client, target, eye) != null;
     }
 
     private static boolean isWalkable(Minecraft client, BlockPos feet) {
@@ -491,36 +565,6 @@ public final class BuildEngine {
         };
     }
 
-    private static float yawForFacing(String facing) {
-        if (facing == null) return Float.NaN;
-        int x = 0;
-        int z = 0;
-        switch (facing) {
-            case "north" -> z = -1;
-            case "south" -> z = 1;
-            case "west" -> x = -1;
-            case "east" -> x = 1;
-            default -> { return Float.NaN; }
-        }
-
-        if ("LEFT_RIGHT".equals(mirror)) z = -z;
-        else if ("FRONT_BACK".equals(mirror)) x = -x;
-
-        int tx = x;
-        int tz = z;
-        switch (rotation) {
-            case "CLOCKWISE_90" -> { tx = -z; tz = x; }
-            case "COUNTERCLOCKWISE_90" -> { tx = z; tz = -x; }
-            case "CLOCKWISE_180" -> { tx = -x; tz = -z; }
-        }
-
-        if (tz > 0) return 0.0F;
-        if (tx < 0) return 90.0F;
-        if (tz < 0) return 180.0F;
-        if (tx > 0) return -90.0F;
-        return Float.NaN;
-    }
-
     /**
      * Finds a required block in the complete 36-slot player inventory.
      * If it is in the main inventory, swap it into an empty hotbar slot (or
@@ -575,21 +619,68 @@ public final class BuildEngine {
         return -1;
     }
 
-    private static Support findSupport(Minecraft client, BlockPos target) {
+    private static boolean hasAdjacentSupport(Minecraft client, BlockPos target) {
+        for (Direction side : Direction.values()) {
+            BlockPos supportPos = target.relative(side);
+            BlockState supportState = client.level.getBlockState(supportPos);
+            if (!supportState.isAir()
+                    && client.level.getBlockEntity(supportPos) == null
+                    && !supportState.getCollisionShape(client.level, supportPos).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Finds an adjacent solid face that the player can actually see and reach.
+     * The ray must hit that exact face; walls, corners and empty space do not count.
+     */
+    private static Support findSupport(Minecraft client, BlockPos target, Vec3 eye) {
+        Support best = null;
+        double bestDistance = Double.MAX_VALUE;
+
         for (Direction side : Direction.values()) {
             BlockPos supportPos = target.relative(side);
             BlockState supportState = client.level.getBlockState(supportPos);
             if (supportState.isAir() || client.level.getBlockEntity(supportPos) != null) continue;
 
+            var shape = supportState.getCollisionShape(client.level, supportPos);
+            if (shape.isEmpty()) continue;
+
             Direction clickedFace = side.getOpposite();
-            Vec3 hitLocation = Vec3.atCenterOf(supportPos).add(
-                    clickedFace.getStepX() * 0.499,
-                    clickedFace.getStepY() * 0.499,
-                    clickedFace.getStepZ() * 0.499
-            );
-            return new Support(supportPos, clickedFace, hitLocation);
+            AABB bounds = shape.bounds();
+            double x = supportPos.getX() + (bounds.minX + bounds.maxX) * 0.5D;
+            double y = supportPos.getY() + (bounds.minY + bounds.maxY) * 0.5D;
+            double z = supportPos.getZ() + (bounds.minZ + bounds.maxZ) * 0.5D;
+
+            // Aim at the middle of the actual collision-shape face (works for slabs too).
+            switch (clickedFace) {
+                case DOWN -> y = supportPos.getY() + bounds.minY + 0.001D;
+                case UP -> y = supportPos.getY() + bounds.maxY - 0.001D;
+                case NORTH -> z = supportPos.getZ() + bounds.minZ + 0.001D;
+                case SOUTH -> z = supportPos.getZ() + bounds.maxZ - 0.001D;
+                case WEST -> x = supportPos.getX() + bounds.minX + 0.001D;
+                case EAST -> x = supportPos.getX() + bounds.maxX - 0.001D;
+            }
+
+            Vec3 hitLocation = new Vec3(x, y, z);
+            double distance = eye.distanceToSqr(hitLocation);
+            if (distance > REACH_SQUARED || distance >= bestDistance) continue;
+
+            BlockHitResult sight = client.level.clip(new ClipContext(
+                    eye, hitLocation, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, client.player
+            ));
+            if (sight.getType() != HitResult.Type.BLOCK
+                    || !sight.getBlockPos().equals(supportPos)
+                    || sight.getDirection() != clickedFace) {
+                continue;
+            }
+
+            bestDistance = distance;
+            best = new Support(supportPos, clickedFace, hitLocation);
         }
-        return null;
+        return best;
     }
 
     private record Support(BlockPos blockPos, Direction clickedFace, Vec3 hitLocation) {}

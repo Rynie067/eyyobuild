@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica schematic reader and auto-builder for Minecraft Java 26.2.
 
-## Current status — 0.3.0-alpha.1
+## Current status — 0.3.1-alpha.1
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops auto-build.
@@ -20,6 +20,8 @@ EYYOBUILD is a client-side Litematica schematic reader and auto-builder for Mine
 - If a required block is nowhere in the inventory, that schematic position is skipped and the builder continues; missing materials no longer freeze the build at one row.
 - Starts each horizontal layer near the player's starting X/Z position instead of always beginning at the same schematic corner.
 - Adds a persistent UI speed slider for block placement and breaking (0.1–5.0 blocks/second, default 1.0). Movement speed is unchanged; the delay is saved in `config/eyyobuild.properties`.
+- Placement now requires a real adjacent support face, a clear line of sight, and normal interaction reach. EYYOBUILD turns the player's view toward that face and uses the actual crosshair ray result; synthetic hit results and air placement are disabled.
+- Wrong blocks are only broken when the real crosshair ray is on that block and it is within normal reach.
 - Skips blocks already correct, protects block entities, and removes incorrect non-container blocks when permitted.
 
 ## Setup
@@ -46,9 +48,9 @@ Both keys can be changed in **Options → Controls → Key Binds → EYYOBUILD**
 - Survival/adventure mode cannot fly in vanilla. EYYOBUILD walks and jumps on supported ground; it will stop rather than walk across a void or unsupported edge.
 - In creative mode, flight is enabled only while an auto-build session is active, and is restored when the session stops. Servers remain authoritative and can reject flight or movement.
 - If the player is airborne without flight, automatic movement waits instead of steering them into a fall.
-- The first block of a completely floating build still needs a normal adjacent support block. Vanilla placement cannot place a block into completely empty air.
+- Air placement is disabled. Every new block needs an adjacent collidable support block with a clear line of sight; the player must turn toward its real face and be within vanilla interaction reach. Slabs and other partial-shape supports are targeted using their collision-shape face.
 - The player must be within normal interaction reach to place or break the target block.
-- In multiplayer, the server remains authoritative and may reject placement, breaking or movement. The speed slider only adds a client-side delay; it does not bypass anti-cheat, permissions, region protection, cooldowns or server rules, and cannot guarantee that a server will allow automation. Use it only where automation is permitted.
+- In multiplayer, the server remains authoritative and may reject placement, breaking or movement. EYYOBUILD does not evade anti-cheat, permissions, region protection, server cooldowns or server rules; public SMP use is only possible where that server permits automation. The speed slider is a pacing option, not an anti-cheat bypass.
 - Required block items can be anywhere in the player's main inventory; EYYOBUILD moves them to the hotbar automatically. Positions whose blocks are not in the inventory are skipped and reported in the final summary.
 - Existing block entities (chests, barrels, furnaces, etc.) are protected.
 - Per-subregion Litematica offsets/rotation/mirror settings and complex block state orientation (for example every rail/redstone shape) are not fully reproduced yet. Review those parts manually.
