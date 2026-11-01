@@ -1,5 +1,6 @@
 package com.rynie.eyyobuild.ui;
 
+import com.rynie.eyyobuild.BuildSettings;
 import com.rynie.eyyobuild.BuilderSession;
 import com.rynie.eyyobuild.schematic.SchematicCatalog;
 import com.rynie.eyyobuild.schematic.SchematicSummary;
