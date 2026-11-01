@@ -1,65 +1,53 @@
 # EYYOBUILD
 
-EYYOBUILD is a client-side Litematica schematic reader and auto-builder for Minecraft Java 26.2.
+EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.5.0-alpha.1
+## Current status — 0.6.0-alpha.1
 
 - Fabric 26.2 / Java 25.
-- Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops auto-build.
-- The UI **Başlat** button explicitly starts the builder; it no longer relies on a toggle call. It changes to **Durdur** once active.
-- The UI now keeps the status message clear of the button row so missing requirements and start errors are visible.
-- Reads Litematica region positions/sizes, palettes, block properties and packed BlockStates.
-- Keeps region coordinates relative to the actual Litematica schematic origin, including negative region offsets.
-- Reads the selected Litematica placement's world origin, rotation and mirror settings.
-- Builds at the selected Litematica placement, not at the player's feet.
-- **Creative:** if the player is allowed to fly, EYYOBUILD enables flight for the active build session and automatically restores the previous non-flying state when stopped.
-- **Survival/adventure:** uses safe ground-based pathfinding, jumping up one-block steps and walking through passable decorations. It does not grant flight.
-- Ground path search uses A* costs and collision shapes, solid support and clear head/feet space. It prefers shorter, lower-risk routes and will not deliberately walk into unsupported air.
-- When the build is stopped, EYYOBUILD releases only the movement keys and flight state it changed.
-- Searches all 36 main-inventory slots for required blocks. If a block is in the main inventory, it is swapped into an empty hotbar slot (or the selected hotbar slot if full) and selected automatically.
-- If a required block is nowhere in the inventory, that schematic position is skipped and the builder continues; missing materials no longer freeze the build at one row.
-- Starts each horizontal layer near the player's starting X/Z position instead of always beginning at the same schematic corner.
-- Adds a persistent UI speed slider for block placement and breaking (0.1–5.0 blocks/second, default 1.0). Movement speed is unchanged; the delay is saved in `config/eyyobuild.properties`.
-- Placement now requires a real adjacent support face, a clear line of sight, and normal interaction reach. EYYOBUILD turns the player's view toward that face and uses the actual crosshair ray result; synthetic hit results and air placement are disabled.
-- Wrong blocks are only broken when the real crosshair ray is on that block and it is within normal reach.
-- If a supported-ground path does not exist, the builder can extend a horizontal bridge while sneaking, one block at a time, using only full-cube surplus inventory blocks not reserved for the schematic. It walks onto each acknowledged bridge tile before extending the next one.
-- For a floating first schematic block, it can place a spare support block directly underneath when a real adjacent face is visible and reachable.
-- Every placement waits for the server's block-state confirmation. If no confirmation arrives within 40 ticks, the build stops with a clear server-rejection/timeout message instead of repeatedly clicking the same position.
-- Support and bridge blocks are left in the world; they are not automatically removed in this alpha.
-- Skips blocks already correct, protects block entities, and removes incorrect non-container blocks when permitted.
+- Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
+- The Baritone Fabric 26.2 runtime is bundled inside the EYYOBUILD JAR as a separate nested mod. You do not need to install a second Baritone JAR.
+- EYYOBUILD checks that the selected Litematica placement belongs to the same `.litematic` file chosen in its UI, then passes that selected placement to Baritone's own builder process.
+- Baritone handles A* route planning and execution, obstacle mining, block placement, throwaway scaffolding/bridging, jumps, parkour movement, safe descents, automatic tool selection and moving inventory blocks to the hotbar, subject to Baritone settings and available materials.
+- Litematica's selected placement, its enabled subregions, offsets, rotation and mirror are read by Baritone's Litematica integration instead of being reimplemented in EYYOBUILD.
+- EYYOBUILD temporarily enables the automation settings needed for construction: breaking, placing, inventory handling, auto-tool, sprinting, parkour and the Baritone builder. Original Baritone settings are restored when the job ends or is stopped.
+- The EYYOBUILD speed slider controls Baritone's right-click and block-break delays. It is a pacing setting, not an anti-cheat bypass.
+- The UI shows whether Baritone is walking/building, planning the next action, or paused because it could not find a valid next move.
+- **B** and **H** are the only EYYOBUILD key mappings; both can be rebound in Minecraft Controls.
 
 ## Setup
 
-1. Install **Litematica** and its required dependency, **MaLiLib**, for Minecraft 26.2.
-2. Put the same `.litematic` file into EYYOBUILD's game `schematics/` folder.
-3. In Litematica, load the schematic and create a placement. Select that placement in the Schematic Placements list.
-4. Press **B** in EYYOBUILD and select the matching `.litematic` file.
-5. Keep the required blocks in your hotbar.
-6. Click **Başlat** in the UI or press **H**. Click **Durdur** or press **H** again to stop.
-7. In creative, EYYOBUILD turns flight on for the build session. In survival/adventure it walks only where a safe route exists.
+1. Use Minecraft **26.2**, Fabric Loader **0.19.5 or newer**, Fabric API, Litematica and its required dependency, MaLiLib.
+2. Put the EYYOBUILD JAR in the game's `mods/` folder. The Baritone 26.2 engine is already nested inside it.
+3. Put the `.litematic` file into the game's `schematics/` folder.
+4. Load that same file in Litematica and create/enable a placement. Select the placement in Litematica's Schematic Placements list.
+5. Press **B** in EYYOBUILD and select the matching `.litematic` file.
+6. Keep building blocks and some common full-block materials (such as dirt, cobblestone, netherrack or stone) in the inventory for the schematic and any support/scaffolding the route requires.
+7. Click **Başlat** or press **H**. Click **Durdur** or press **H** again to stop.
 
 ## Controls
 
 | Action | Default key |
 |---|---|
 | Open EYYOBUILD UI | B |
-| Start / stop auto-build and auto-movement | H |
+| Start / stop automatic building and movement | H |
 
 Both keys can be changed in **Options → Controls → Key Binds → EYYOBUILD**.
 
-## Safety and limitations
+## Multiplayer and safety
 
-- Survival/adventure mode cannot fly in vanilla. EYYOBUILD walks and jumps on supported ground; it will stop rather than walk across a void or unsupported edge.
-- In creative mode, flight is enabled only while an auto-build session is active, and is restored when the session stops. Servers remain authoritative and can reject flight or movement.
-- If the player is airborne without flight, automatic movement waits instead of steering them into a fall.
-- Air placement is disabled. Every new block needs an adjacent collidable support block with a clear line of sight; the player must turn toward its real face and be within vanilla interaction reach. Slabs and other partial-shape supports are targeted using their collision-shape face. Auto-bridging is horizontal and requires surplus full-cube blocks; it does not build vertical towers or stairs yet.
-- The player must be within normal interaction reach to place or break the target block.
-- In multiplayer, the server remains authoritative and may reject placement, breaking or movement. EYYOBUILD does not evade anti-cheat, permissions, region protection, server cooldowns or server rules; public SMP use is only possible where that server permits automation. The speed slider is a pacing option, not an anti-cheat bypass.
-- Required block items can be anywhere in the player's main inventory; EYYOBUILD moves them to the hotbar automatically. Positions whose blocks are not in the inventory are skipped and reported in the final summary.
-- Existing block entities (chests, barrels, furnaces, etc.) are protected.
-- Per-subregion Litematica offsets/rotation/mirror settings and complex block state orientation (for example every rail/redstone shape) are not fully reproduced yet. Review those parts manually.
-- Large schematics are limited to 8 million decoded positions.
-- This alpha has not been tested in every modpack/server. Test on a backup world first.
+- EYYOBUILD performs ordinary client-side Baritone movement and block interactions. The server remains authoritative and may reject movement, mining or placement.
+- EYYOBUILD does **not** bypass anti-cheat, server cooldowns, permissions, region protection, server rules or moderation. Donut SMP, Chicken SMP and any other public server may prohibit automation; use it only where the server permits it. No ban-free or server-compatibility guarantee is made.
+- Advanced Baritone movement such as parkour, scaffold placement and water-bucket descents can be risky in some terrain. Test in a backup/single-player world first and keep valuable items safe.
+- If Baritone cannot find a valid route or construction action, its builder may pause rather than continue blindly. The UI reports the paused state; press **H** to stop.
+- The speed slider cannot force the server to accept an action. Increase the delay when the server is rejecting or throttling interactions.
+- EYYOBUILD requires an active, enabled Litematica placement that matches the selected file. If the file, placement or Litematica world is not available, the build will not start.
+
+## Third-party component and licenses
+
+- EYYOBUILD's own source is MIT-licensed (root `LICENSE`).
+- The bundled Baritone 26.2 component is an unmodified nested Fabric mod from the official Baritone v1.19.0 release and is covered separately by its upstream LGPL-3.0 license.
+- The Baritone license and source reference are included in `LICENSES/Baritone-LICENSE.txt` and `THIRD_PARTY_NOTICES.md`.
 
 ## Build
 
@@ -69,7 +57,7 @@ Requirements: JDK 25 and Gradle 9.5.1.
 gradle build
 ```
 
-The mod JAR is written to `build/libs/`. GitHub Actions builds pushes and creates a version-matched GitHub pre-release.
+The build downloads the official Baritone Fabric 26.2 JAR, verifies its SHA-256 checksum, compiles against its public API and embeds it as a nested Fabric mod. The EYYOBUILD JAR is written to `build/libs/`. GitHub Actions builds pushes and publishes version-matched pre-releases.
 
 ## Versioning
 
