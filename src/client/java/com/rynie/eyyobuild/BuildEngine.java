@@ -166,7 +166,9 @@ public final class BuildEngine {
         // resulting block state. This prevents repeated clicks on one unconfirmed
         // position, which looked like the builder had frozen after a few blocks.
         if (pendingActionPos != null) {
-            if (client.level.getBlockState(pendingActionPos).getBlock() == pendingActionBlock) {
+            if (pendingActionBlock == null
+                    ? client.level.getBlockState(pendingActionPos).isAir()
+                    : client.level.getBlockState(pendingActionPos).getBlock() == pendingActionBlock) {
                 BlockPos walkTarget = pendingActionWalkTarget;
                 clearPendingAction();
                 setAutoDescend(client, false);
@@ -454,6 +456,7 @@ public final class BuildEngine {
         }
 
         BlockPos next = path.get(pathIndex);
+        if (clearPathObstruction(client, next)) return;
         double dx = next.getX() + 0.5 - client.player.getX();
         double dz = next.getZ() + 0.5 - client.player.getZ();
 
@@ -478,6 +481,63 @@ public final class BuildEngine {
         status = "Otomatik yürüyor...";
     }
 
+    /**
+     * Clears breakable blocks in the next path cell before walking into it.
+     * Block entities and unbreakable blocks are never touched. A successful
+     * break waits for the server's air-state confirmation before continuing.
+     */
+    private static boolean clearPathObstruction(Minecraft client, BlockPos destination) {
+        for (BlockPos obstruction : List.of(destination, destination.above())) {
+            BlockState state = client.level.getBlockState(obstruction);
+            if (state.getCollisionShape(client.level, obstruction).isEmpty()) continue;
+
+            if (client.level.getBlockEntity(obstruction) != null
+                    || state.getDestroySpeed(client.level, obstruction) < 0.0F) {
+                releaseAutomationInput(client);
+                resetPath();
+                status = "Yol üzerindeki engel kırılamıyor veya blok varlığı; güvenli rota yeniden aranıyor.";
+                return true;
+            }
+
+            if (client.player.getEyePosition().distanceToSqr(Vec3.atCenter(obstruction)) > REACH_SQUARED) {
+                return false;
+            }
+
+            if (!aimAt(client, Vec3.atCenter(obstruction))) {
+                releaseAutomationInput(client);
+                status = "Yol üzerindeki engel için nişan alınıyor...";
+                return true;
+            }
+
+            HitResult aimedResult = client.player.pick(4.5D, 1.0F, false);
+            if (!(aimedResult instanceof BlockHitResult aimedBlock)
+                    || aimedBlock.getType() != HitResult.Type.BLOCK
+                    || !aimedBlock.getBlockPos().equals(obstruction)) {
+                releaseAutomationInput(client);
+                status = "Engel gerçek nişangâhta değil; kırma yapılmadı.";
+                return true;
+            }
+
+            boolean destroyed = client.gameMode.destroyBlock(obstruction);
+            if (!destroyed) {
+                releaseAutomationInput(client);
+                active = false;
+                status = "Yol engeli kırılamadı; sunucu işlemi reddetti. Otomasyon durduruldu.";
+                return true;
+            }
+
+            releaseAutomationInput(client);
+            actionCooldownTicks = BuildSettings.getActionDelayTicks();
+            pendingActionPos = obstruction;
+            pendingActionBlock = null; // null means wait for the server to confirm air.
+            pendingActionWalkTarget = null;
+            pendingActionTicks = 0;
+            status = "Yol açılıyor: " + obstruction.toShortString();
+            return true;
+        }
+        return false;
+    }
+
     private static void moveWhileFlying(Minecraft client, BlockPos target) {
         double dx = target.getX() + 0.5 - client.player.getX();
         double dy = target.getY() + 0.5 - client.player.getY();
@@ -496,46 +556,15 @@ public final class BuildEngine {
     }
 
     private static List<BlockPos> findPath(Minecraft client, BlockPos start, BlockPos target) {
-        ArrayDeque<BlockPos> queue = new ArrayDeque<>();
-        Map<BlockPos, BlockPos> previous = new HashMap<>();
-        Set<BlockPos> visited = new HashSet<>();
-        queue.add(start);
-        visited.add(start);
-        BlockPos goal = null;
-        int examined = 0;
-
-        while (!queue.isEmpty() && examined++ < MAX_PATH_NODES) {
-            BlockPos current = queue.removeFirst();
-            if (isBuildStandPosition(client, current, target)) {
-                goal = current;
-                break;
-            }
-
-            if (Math.abs(current.getX() - start.getX()) > MAX_PATH_RADIUS
-                    || Math.abs(current.getZ() - start.getZ()) > MAX_PATH_RADIUS
-                    || Math.abs(current.getY() - start.getY()) > MAX_PATH_HEIGHT) {
-                continue;
-            }
-
-            for (Direction direction : Direction.Plane.HORIZONTAL) {
-                for (int dy = 1; dy >= -1; dy--) {
-                    BlockPos next = current.relative(direction).offset(0, dy, 0);
-                    if (visited.contains(next) || !isWalkable(client, next)) continue;
-                    visited.add(next);
-                    previous.put(next, current);
-                    queue.addLast(next);
-                }
-            }
-        }
-
-        if (goal == null) return List.of();
-        ArrayList<BlockPos> result = new ArrayList<>();
-        for (BlockPos cursor = goal; cursor != null; cursor = previous.get(cursor)) {
-            result.add(cursor);
-            if (cursor.equals(start)) break;
-        }
-        java.util.Collections.reverse(result);
-        return result;
+        return NavigationPlanner.findPath(
+                client,
+                start,
+                target,
+                position -> isBuildStandPosition(client, position, target),
+                MAX_PATH_NODES,
+                MAX_PATH_RADIUS,
+                MAX_PATH_HEIGHT
+        );
     }
 
     private static boolean isBuildStandPosition(Minecraft client, BlockPos feet, BlockPos target) {
@@ -545,19 +574,7 @@ public final class BuildEngine {
     }
 
     private static boolean isWalkable(Minecraft client, BlockPos feet) {
-        BlockState feetState = client.level.getBlockState(feet);
-        BlockState headState = client.level.getBlockState(feet.above());
-        BlockPos floorPos = feet.below();
-        BlockState floorState = client.level.getBlockState(floorPos);
-
-        // Collision shapes rather than isAir() lets the player pass through
-        // grass, flowers, snow layers and other non-solid decorative blocks.
-        return feetState.getCollisionShape(client.level, feet).isEmpty()
-                && headState.getCollisionShape(client.level, feet.above()).isEmpty()
-                && feetState.getFluidState().isEmpty()
-                && headState.getFluidState().isEmpty()
-                && !floorState.getCollisionShape(client.level, floorPos).isEmpty()
-                && floorState.getFluidState().isEmpty();
+        return NavigationPlanner.isWalkable(client, feet);
     }
 
     private static void setAutoForward(Minecraft client, boolean pressed) {
