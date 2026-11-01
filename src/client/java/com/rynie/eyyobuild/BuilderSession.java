@@ -12,16 +12,14 @@ public final class BuilderSession {
     private BuilderSession() {
     }
 
-    public static synchronized String toggle(SchematicSummary schematic) {
+    public static synchronized void toggle(SchematicSummary schematic) {
         if (active) {
             active = false;
-            return "EYYOBUILD yardim oturumu duraklatildi.";
+            return;
         }
-        if (schematic == null || !schematic.readable()) {
-            return "Once gecerli bir Litematica sematigi sec.";
+        if (schematic != null && schematic.readable()) {
+            active = true;
         }
-        active = true;
-        return "EYYOBUILD yardim oturumu acildi. Bu surum bloklari otomatik yerlestirmez.";
     }
 
     public static synchronized boolean isActive() {

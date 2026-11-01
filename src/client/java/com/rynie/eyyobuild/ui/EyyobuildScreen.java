@@ -39,10 +39,7 @@ public final class EyyobuildScreen extends Screen {
         this.assistantButton = this.addRenderableWidget(Button.builder(
                 Component.literal(BuilderSession.isActive() ? "Duraklat" : "Baslat"),
                 button -> {
-                    String message = BuilderSession.toggle(SchematicCatalog.current());
-                    if (this.minecraft != null && this.minecraft.player != null) {
-                        this.minecraft.player.displayClientMessage(Component.literal(message), true);
-                    }
+                    BuilderSession.toggle(SchematicCatalog.current());
                     updateAssistantButton();
                 }
         ).bounds(startX + (buttonWidth + gap) * 3, buttonY, buttonWidth, 20).build());

@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side schematic and manual build-assistance project for Minecraft Java 26.2.
 
-## Current status — 0.1.1-alpha
+## Current status — 0.1.2-alpha
 
 - Fabric 26.2 / Java 25 project setup.
 - Exactly two configurable EYYOBUILD key mappings.

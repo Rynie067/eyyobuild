@@ -8,7 +8,6 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
 /** Exactly two configurable EYYOBUILD key mappings: UI and assistant toggle. */
@@ -36,8 +35,7 @@ public final class EyyobuildClient implements ClientModInitializer {
 
             while (TOGGLE_ASSISTANT.consumeClick()) {
                 if (client.player == null || client.level == null) continue;
-                String message = BuilderSession.toggle(SchematicCatalog.current());
-                client.player.displayClientMessage(Component.literal(message), true);
+                BuilderSession.toggle(SchematicCatalog.current());
             }
 
             if (client.player == null && BuilderSession.isActive()) {
