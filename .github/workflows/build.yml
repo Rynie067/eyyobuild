@@ -28,6 +28,12 @@ jobs:
         with:
           gradle-version: "9.5.1"
 
+      - name: Read mod version
+        id: version
+        run: |
+          VERSION="$(sed -n 's/^mod_version=//p' gradle.properties)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Build mod
         run: gradle build --no-daemon
 
@@ -44,8 +50,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v0.2.1-alpha.3 >/dev/null 2>&1 || gh release create v0.2.1-alpha.3 build/libs/eyyobuild-0.2.1-alpha.3.jar \
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          JAR="build/libs/eyyobuild-${VERSION}.jar"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" "$JAR" \
             --target "${GITHUB_SHA}" \
-            --title "EYYOBUILD 0.2.1-alpha.3" \
+            --title "EYYOBUILD $VERSION" \
             --prerelease \
             --generate-notes

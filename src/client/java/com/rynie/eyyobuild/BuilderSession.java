@@ -11,8 +11,14 @@ public final class BuilderSession {
         if (BuildEngine.isActive()) {
             BuildEngine.stop("İnşaat durduruldu.");
         } else {
-            BuildEngine.start(client, schematic);
+            start(client, schematic);
         }
+    }
+
+    /** Starts explicitly; used by the UI so the button never toggles an active session off. */
+    public static synchronized void start(Minecraft client, SchematicSummary schematic) {
+        if (BuildEngine.isActive()) return;
+        BuildEngine.start(client, schematic);
     }
 
     public static synchronized boolean isActive() {

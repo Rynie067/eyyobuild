@@ -2,18 +2,20 @@
 
 EYYOBUILD is a client-side Litematica schematic reader and auto-builder for Minecraft Java 26.2.
 
-## Current status — 0.2.1-alpha.3
+## Current status — 0.2.1-alpha.4
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops auto-build.
+- The UI **Başlat** button explicitly starts the builder; it no longer relies on a toggle call. It changes to **Durdur** once active.
+- The UI now keeps the status message clear of the button row so missing requirements and start errors are visible.
 - Reads Litematica region positions/sizes, palettes, block properties and packed BlockStates.
 - Keeps region coordinates relative to the actual Litematica schematic origin, including negative region offsets.
 - Reads the selected Litematica placement's world origin, rotation and mirror settings.
 - Builds at the selected Litematica placement, not at the player's feet.
-- **Automatic movement is enabled only while H/Auto-build is active.** When the build is stopped, EYYOBUILD releases only the movement keys it pressed and leaves normal player controls alone.
-- On ground, it searches for a bounded path using only positions with solid floor and two clear blocks; it won't deliberately walk over unsupported air.
-- If the player is already flying, it steers forward and vertically toward the next build target while preserving the existing flight state.
-- It never enables flight permission by itself. In multiplayer, server permissions still apply.
+- **Creative:** if the player is allowed to fly, EYYOBUILD enables flight for the active build session and automatically restores the previous non-flying state when stopped.
+- **Survival/adventure:** uses safe ground-based pathfinding, jumping up one-block steps and walking through passable decorations. It does not grant flight.
+- Ground path search is bounded and uses collision shapes, solid support and clear head/feet space. It will not deliberately walk into unsupported air.
+- When the build is stopped, EYYOBUILD releases only the movement keys and flight state it changed.
 - Selects matching block items from the hotbar, skips blocks already correct, protects block entities, and removes incorrect non-container blocks when permitted.
 
 ## Setup
@@ -23,8 +25,8 @@ EYYOBUILD is a client-side Litematica schematic reader and auto-builder for Mine
 3. In Litematica, load the schematic and create a placement. Select that placement in the Schematic Placements list.
 4. Press **B** in EYYOBUILD and select the matching `.litematic` file.
 5. Keep the required blocks in your hotbar.
-6. Press **H** to start automatic building and movement. Press **H** again to stop both.
-7. If you are building high in the air, enable creative flight first. EYYOBUILD will steer while flight is already active; it will not switch flight permissions on.
+6. Click **Başlat** in the UI or press **H**. Click **Durdur** or press **H** again to stop.
+7. In creative, EYYOBUILD turns flight on for the build session. In survival/adventure it walks only where a safe route exists.
 
 ## Controls
 
@@ -37,8 +39,8 @@ Both keys can be changed in **Options → Controls → Key Binds → EYYOBUILD**
 
 ## Safety and limitations
 
-- Ground movement only follows positions with a solid floor; the pathfinder will stop instead of intentionally walking across a void or unsupported edge.
-- In an existing flight state, the builder uses forward plus jump/descend inputs to approach the target in 3D. It does not grant flight abilities; survival players must use a permitted flight method.
+- Survival/adventure mode cannot fly in vanilla. EYYOBUILD walks and jumps on supported ground; it will stop rather than walk across a void or unsupported edge.
+- In creative mode, flight is enabled only while an auto-build session is active, and is restored when the session stops. Servers remain authoritative and can reject flight or movement.
 - If the player is airborne without flight, automatic movement waits instead of steering them into a fall.
 - The first block of a completely floating build still needs a normal adjacent support block. Vanilla placement cannot place a block into completely empty air.
 - The player must be within normal interaction reach to place or break the target block.
@@ -57,7 +59,7 @@ Requirements: JDK 25 and Gradle 9.5.1.
 gradle build
 ```
 
-The mod JAR is written to `build/libs/`. GitHub Actions builds pushes and creates a GitHub pre-release.
+The mod JAR is written to `build/libs/`. GitHub Actions builds pushes and creates a version-matched GitHub pre-release.
 
 ## Versioning
 

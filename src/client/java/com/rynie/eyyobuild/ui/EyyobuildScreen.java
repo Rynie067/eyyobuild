@@ -19,11 +19,11 @@ public final class EyyobuildScreen extends Screen {
 
     @Override
     protected void init() {
-        int buttonWidth = 82;
-        int gap = 5;
+        int buttonWidth = 88;
+        int gap = 4;
         int totalWidth = buttonWidth * 5 + gap * 4;
         int startX = (this.width - totalWidth) / 2;
-        int buttonY = this.height / 2 + 105;
+        int buttonY = this.height / 2 + 116;
 
         this.addRenderableWidget(Button.builder(Component.literal("Önceki"), button -> {
             SchematicCatalog.previous();
@@ -38,9 +38,14 @@ public final class EyyobuildScreen extends Screen {
         }).bounds(startX + (buttonWidth + gap) * 2, buttonY, buttonWidth, 20).build());
 
         this.buildButton = this.addRenderableWidget(Button.builder(
-                Component.literal(BuilderSession.isActive() ? "Durdur" : "İnşaatı başlat"),
+                Component.literal(BuilderSession.isActive() ? "Durdur" : "Başlat"),
                 button -> {
-                    BuilderSession.toggle(Minecraft.getInstance(), SchematicCatalog.current());
+                    Minecraft client = Minecraft.getInstance();
+                    if (BuilderSession.isActive()) {
+                        BuilderSession.stop();
+                    } else {
+                        BuilderSession.start(client, SchematicCatalog.current());
+                    }
                     updateBuildButton();
                 }
         ).bounds(startX + (buttonWidth + gap) * 3, buttonY, buttonWidth, 20).build());
@@ -52,7 +57,7 @@ public final class EyyobuildScreen extends Screen {
 
     private void updateBuildButton() {
         if (buildButton != null) {
-            buildButton.setMessage(Component.literal(BuilderSession.isActive() ? "Durdur" : "İnşaatı başlat"));
+            buildButton.setMessage(Component.literal(BuilderSession.isActive() ? "Durdur" : "Başlat"));
         }
     }
 
@@ -108,8 +113,9 @@ public final class EyyobuildScreen extends Screen {
 
         String buildState = BuilderSession.status();
         int stateColor = BuilderSession.isActive() ? 0xFF8FE3B0 : 0xFFFFC58A;
-        graphics.text(this.font, trim(buildState, 70), left + 20, bottom - 58, stateColor, true);
-        graphics.text(this.font, "B: arayüz  |  H: oto inşaat + hareket aç/kapat", left + 20, bottom - 38, 0xFFB8C1D1, false);
+        graphics.text(this.font, "Durum: " + trim(buildState, 68), left + 20, bottom - 88, stateColor, true);
+        graphics.text(this.font, "B: arayüz  |  H: oto inşaat + hareket aç/kapat",
+                left + 20, bottom - 68, 0xFFB8C1D1, false);
     }
 
     private static String trim(String value, int maxLength) {

@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -27,16 +28,15 @@ import java.util.Set;
 /**
  * Automatic schematic builder.
  *
- * Auto movement is active only while a build session is running. On ground it follows
- * a bounded path made only of supported, walkable positions. If the player is already
- * flying, it steers in 3D while preserving the current flight ability. It never attempts
- * to enable flight or walk across unsupported air.
+ * Creative players are automatically switched into flight while a build is active.
+ * Survival/adventure players use safe, ground-based pathfinding and never receive flight.
+ * Only keys and abilities changed by EYYOBUILD are restored when the session stops.
  */
 public final class BuildEngine {
     private static final double REACH_SQUARED = 20.25;
-    private static final int MAX_PATH_NODES = 16_000;
+    private static final int MAX_PATH_NODES = 24_000;
     private static final int MAX_PATH_RADIUS = 40;
-    private static final int MAX_PATH_HEIGHT = 8;
+    private static final int MAX_PATH_HEIGHT = 24;
 
     private static boolean active;
     private static String status = "Hazır.";
@@ -51,10 +51,11 @@ public final class BuildEngine {
     private static List<BlockPos> path = List.of();
     private static int pathIndex;
 
-    // Track only keys EYYOBUILD pressed. When inactive, never clear the player's own inputs.
+    // Track only controls changed by EYYOBUILD.
     private static boolean ownsForward;
     private static boolean ownsJump;
     private static boolean ownsDescend;
+    private static boolean ownsFlight;
 
     private BuildEngine() {}
 
@@ -68,7 +69,9 @@ public final class BuildEngine {
 
     public static synchronized void start(Minecraft client, SchematicSummary schematic) {
         releaseAutomationInput(client);
+        releaseAutomationFlight(client);
         stop("Hazır.");
+
         if (client.player == null || client.level == null) {
             status = "Önce bir dünyaya gir.";
             return;
@@ -95,6 +98,10 @@ public final class BuildEngine {
         placementName = placement.placementName();
         cursor = 0;
         resetPath();
+
+        // Creative mode is allowed to fly. Enable it for this build session so high
+        // schematics can be reached from the UI without requiring a manual double-space.
+        enableCreativeFlightIfAllowed(client);
         active = true;
         status = "Otomatik şematik başladı: " + anchor.toShortString() + ".";
     }
@@ -113,15 +120,21 @@ public final class BuildEngine {
 
     public static synchronized void tick(Minecraft client) {
         if (!active) {
-            // Release only keys that EYYOBUILD itself pressed; normal player input is untouched.
             releaseAutomationInput(client);
+            releaseAutomationFlight(client);
             return;
         }
         if (client.player == null || client.level == null) {
             stop("Dünya kapandı; inşaat durduruldu.");
             releaseAutomationInput(client);
+            releaseAutomationFlight(client);
             return;
         }
+
+        // If the server grants flight (creative/spectator), keep the build session
+        // using it. Survival never has mayfly and therefore stays ground-based.
+        enableCreativeFlightIfAllowed(client);
+
         if (cursor >= blocks.size()) {
             stop("Şema tamamlandı!");
             releaseAutomationInput(client);
@@ -201,6 +214,46 @@ public final class BuildEngine {
         }
     }
 
+    private static void enableCreativeFlightIfAllowed(Minecraft client) {
+        if (client.player == null) return;
+        var abilities = client.player.getAbilities();
+        if (!abilities.mayfly || abilities.flying) return;
+
+        abilities.flying = true;
+        ownsFlight = true;
+        notifyAbilitiesChanged(client);
+    }
+
+    private static void releaseAutomationFlight(Minecraft client) {
+        if (!ownsFlight) return;
+        if (client == null || client.player == null) {
+            ownsFlight = false;
+            return;
+        }
+
+        var abilities = client.player.getAbilities();
+        if (abilities.mayfly && abilities.flying) {
+            abilities.flying = false;
+            notifyAbilitiesChanged(client);
+        }
+        ownsFlight = false;
+    }
+
+    /**
+     * LocalPlayer exposes onUpdateAbilities in Minecraft 26.2. Reflection keeps
+     * this optional sync call isolated from mappings while still sending the
+     * normal vanilla abilities packet when creative flight is toggled.
+     */
+    private static void notifyAbilitiesChanged(Minecraft client) {
+        try {
+            Method method = client.player.getClass().getMethod("onUpdateAbilities");
+            method.invoke(client.player);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // If a mapping/provider omits the hook, the server may correct the local
+            // state; the builder will safely fall back to ground movement.
+        }
+    }
+
     private static void moveTowardTarget(Minecraft client, BlockPos target) {
         if (client.player.getAbilities().flying) {
             moveWhileFlying(client, target);
@@ -210,7 +263,7 @@ public final class BuildEngine {
         BlockPos feet = client.player.blockPosition();
         if (!isWalkable(client, feet)) {
             releaseAutomationInput(client);
-            status = "Güvenli zemin yok. Düşmemek için otomatik yürüme beklemede; uçuşunu aç veya sağlam zemine gel.";
+            status = "Güvenli zemin yok. Düşmemek için bekliyor; sağlam zemine gel.";
             resetPath();
             return;
         }
@@ -223,7 +276,7 @@ public final class BuildEngine {
 
         if (path.isEmpty() || pathIndex >= path.size()) {
             releaseAutomationInput(client);
-            status = "Bu bloğa düşmeden ulaşan güvenli yürüyüş yolu bulunamadı.";
+            status = "Bu bloğa güvenli yürüyüş yolu bulunamadı. Hayatta kalmada uçuş kullanılamaz.";
             return;
         }
 
@@ -253,7 +306,6 @@ public final class BuildEngine {
     }
 
     private static void moveWhileFlying(Minecraft client, BlockPos target) {
-        // Preserve an already-active creative/spectator flight; never toggle flight permission.
         double dx = target.getX() + 0.5 - client.player.getX();
         double dy = target.getY() + 0.5 - client.player.getY();
         double dz = target.getZ() + 0.5 - client.player.getZ();
@@ -321,8 +373,16 @@ public final class BuildEngine {
     private static boolean isWalkable(Minecraft client, BlockPos feet) {
         BlockState feetState = client.level.getBlockState(feet);
         BlockState headState = client.level.getBlockState(feet.above());
-        BlockState floorState = client.level.getBlockState(feet.below());
-        return feetState.isAir() && headState.isAir() && !floorState.isAir()
+        BlockPos floorPos = feet.below();
+        BlockState floorState = client.level.getBlockState(floorPos);
+
+        // Collision shapes rather than isAir() lets the player pass through
+        // grass, flowers, snow layers and other non-solid decorative blocks.
+        return feetState.getCollisionShape(client.level, feet).isEmpty()
+                && headState.getCollisionShape(client.level, feet.above()).isEmpty()
+                && feetState.getFluidState().isEmpty()
+                && headState.getFluidState().isEmpty()
+                && !floorState.getCollisionShape(client.level, floorPos).isEmpty()
                 && floorState.getFluidState().isEmpty();
     }
 
