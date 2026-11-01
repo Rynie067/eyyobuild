@@ -57,6 +57,7 @@ public final class BuildEngine {
     private static boolean ownsDescend;
     private static boolean ownsFlight;
     private static int missingBlockSkips;
+    private static int actionCooldownTicks;
 
     private BuildEngine() {}
 
@@ -98,6 +99,7 @@ public final class BuildEngine {
         placementName = placement.placementName();
         cursor = 0;
         missingBlockSkips = 0;
+        actionCooldownTicks = 0;
 
         // Keep the natural bottom-up build order, but start each layer at the
         // position nearest to the player's location when the build is started.
@@ -128,6 +130,7 @@ public final class BuildEngine {
         blocks = List.of();
         anchor = null;
         cursor = 0;
+        actionCooldownTicks = 0;
         rotation = "NONE";
         mirror = "NONE";
         placementName = "";
@@ -150,6 +153,11 @@ public final class BuildEngine {
         // If the server grants flight (creative/spectator), keep the build session
         // using it. Survival never has mayfly and therefore stays ground-based.
         enableCreativeFlightIfAllowed(client);
+
+        // Count down continuously so walking/flying is not slowed by the setting.
+        // The cooldown is enforced only when an actual block interaction is due.
+        boolean actionCoolingDown = actionCooldownTicks > 0;
+        if (actionCoolingDown) actionCooldownTicks--;
 
         if (cursor >= blocks.size()) {
             String completion = missingBlockSkips == 0
@@ -192,6 +200,11 @@ public final class BuildEngine {
         releaseAutomationInput(client);
         resetPath();
 
+        if (actionCoolingDown) {
+            status = "Blok işlemi bekleniyor...";
+            return;
+        }
+
         if (!existing.isAir()) {
             if (client.level.getBlockEntity(target) != null) {
                 status = "Blok varlığı korunuyor: " + target.toShortString();
@@ -199,6 +212,7 @@ public final class BuildEngine {
                 return;
             }
             boolean destroyed = client.gameMode.destroyBlock(target);
+            if (destroyed) actionCooldownTicks = BuildSettings.getActionDelayTicks();
             status = destroyed
                     ? "Yanlış blok kaldırılıyor: " + target.toShortString()
                     : "Blok kırılamadı; sunucu işlemi reddetmiş olabilir.";
@@ -233,6 +247,7 @@ public final class BuildEngine {
                     support.hitLocation(), support.clickedFace(), support.blockPos(), false
             );
             client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit);
+            actionCooldownTicks = BuildSettings.getActionDelayTicks();
             status = "Blok yerleştiriliyor: " + target.toShortString();
         } finally {
             client.player.setYRot(originalYaw);

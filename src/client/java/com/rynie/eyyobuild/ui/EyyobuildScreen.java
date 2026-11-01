@@ -6,7 +6,9 @@ import com.rynie.eyyobuild.schematic.SchematicSummary;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -53,6 +55,11 @@ public final class EyyobuildScreen extends Screen {
         this.addRenderableWidget(Button.builder(Component.literal("Kapat"), button -> {
             this.onClose();
         }).bounds(startX + (buttonWidth + gap) * 4, buttonY, buttonWidth, 20).build());
+
+        int sliderWidth = 460;
+        this.addRenderableWidget(new BuildRateSlider(
+                (this.width - sliderWidth) / 2, this.height / 2 + 55, sliderWidth
+        ));
     }
 
     private void updateBuildButton() {
@@ -66,7 +73,7 @@ public final class EyyobuildScreen extends Screen {
         updateBuildButton();
 
         int panelWidth = 500;
-        int panelHeight = 310;
+        int panelHeight = 340;
         int left = this.width / 2 - panelWidth / 2;
         int top = this.height / 2 - panelHeight / 2;
         int right = left + panelWidth;
@@ -111,11 +118,44 @@ public final class EyyobuildScreen extends Screen {
             }
         }
 
+        graphics.text(this.font, "Yerleştirme hızı (blok koyma / kırma)",
+                left + 20, top + 211, 0xFFB8C1D1, false);
+
         String buildState = BuilderSession.status();
         int stateColor = BuilderSession.isActive() ? 0xFF8FE3B0 : 0xFFFFC58A;
         graphics.text(this.font, "Durum: " + trim(buildState, 68), left + 20, bottom - 88, stateColor, true);
         graphics.text(this.font, "B: arayüz  |  H: oto inşaat + hareket aç/kapat",
                 left + 20, bottom - 68, 0xFFB8C1D1, false);
+    }
+
+    @Override
+    public void removed() {
+        BuildSettings.save();
+        super.removed();
+    }
+
+    private static final class BuildRateSlider extends AbstractSliderButton {
+        private BuildRateSlider(int x, int y, int width) {
+            super(x, y, width, 20, Component.literal(""), BuildSettings.getSliderValue());
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Component.literal(BuildSettings.getSpeedLabel()));
+        }
+
+        @Override
+        protected void applyValue() {
+            BuildSettings.setSliderValue(value);
+            updateMessage();
+        }
+
+        @Override
+        public void onRelease(MouseButtonEvent event) {
+            super.onRelease(event);
+            BuildSettings.save();
+        }
     }
 
     private static String trim(String value, int maxLength) {

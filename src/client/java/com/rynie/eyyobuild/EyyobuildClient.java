@@ -26,6 +26,7 @@ public final class EyyobuildClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        BuildSettings.load();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (OPEN_UI.consumeClick()) {
                 if (client.player == null) continue;
