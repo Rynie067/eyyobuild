@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica schematic reader and auto-builder for Minecraft Java 26.2.
 
-## Current status — 0.2.1-alpha.2
+## Current status — 0.2.1-alpha.3
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops auto-build.

@@ -323,7 +323,7 @@ public final class BuildEngine {
         BlockState headState = client.level.getBlockState(feet.above());
         BlockState floorState = client.level.getBlockState(feet.below());
         return feetState.isAir() && headState.isAir() && !floorState.isAir()
-                && !floorState.getFluidState().isLava();
+                && floorState.getFluidState().isEmpty();
     }
 
     private static void setAutoForward(Minecraft client, boolean pressed) {
