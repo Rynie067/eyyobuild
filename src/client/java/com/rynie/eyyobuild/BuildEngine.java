@@ -6,7 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
@@ -114,7 +114,7 @@ public final class BuildEngine {
 
         SchematicBlock schematicBlock = blocks.get(cursor);
         BlockPos target = anchor.offset(schematicBlock.x(), schematicBlock.y(), schematicBlock.z());
-        Block expectedBlock = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(schematicBlock.blockId()));
+        Block expectedBlock = BuiltInRegistries.BLOCK.get(Identifier.parse(schematicBlock.blockId()));
         if (expectedBlock == null) {
             status = "Bilinmeyen blok: " + schematicBlock.blockId();
             active = false;
@@ -153,7 +153,7 @@ public final class BuildEngine {
             status = "Eksik eşya: " + schematicBlock.blockId() + " (sıcak çubuk)";
             return;
         }
-        client.player.getInventory().selected = hotbarSlot;
+        client.player.getInventory().setSelectedSlot(hotbarSlot);
 
         if (client.player.distanceToSqr(Vec3.atCenterOf(target)) > 20.25) {
             moveNear(client, target);
