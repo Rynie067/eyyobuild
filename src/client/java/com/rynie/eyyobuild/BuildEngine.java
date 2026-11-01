@@ -56,6 +56,7 @@ public final class BuildEngine {
     private static boolean ownsJump;
     private static boolean ownsDescend;
     private static boolean ownsFlight;
+    private static int missingBlockSkips;
 
     private BuildEngine() {}
 
@@ -64,7 +65,9 @@ public final class BuildEngine {
     }
 
     public static synchronized String status() {
-        return status + (blocks.isEmpty() ? "" : "  " + Math.min(cursor, blocks.size()) + "/" + blocks.size());
+        String progress = blocks.isEmpty() ? "" : "  " + Math.min(cursor, blocks.size()) + "/" + blocks.size();
+        String skipped = missingBlockSkips == 0 ? "" : "  |  atlanan: " + missingBlockSkips;
+        return status + progress + skipped;
     }
 
     public static synchronized void start(Minecraft client, SchematicSummary schematic) {
@@ -89,14 +92,27 @@ public final class BuildEngine {
         }
 
         blocks = new ArrayList<>(schematic.blocks());
-        blocks.sort(Comparator.comparingInt(SchematicBlock::y)
-                .thenComparingInt(SchematicBlock::z)
-                .thenComparingInt(SchematicBlock::x));
         anchor = placement.origin();
         rotation = placement.rotation();
         mirror = placement.mirror();
         placementName = placement.placementName();
         cursor = 0;
+        missingBlockSkips = 0;
+
+        // Keep the natural bottom-up build order, but start each layer at the
+        // position nearest to the player's location when the build is started.
+        // This avoids always beginning from the schematic's same X/Z corner.
+        final double startX = client.player.getX();
+        final double startZ = client.player.getZ();
+        blocks.sort(Comparator.comparingInt(SchematicBlock::y)
+                .thenComparingDouble((SchematicBlock block) -> {
+                    BlockPos relative = transform(block.x(), block.y(), block.z());
+                    double dx = anchor.getX() + relative.getX() + 0.5 - startX;
+                    double dz = anchor.getZ() + relative.getZ() + 0.5 - startZ;
+                    return dx * dx + dz * dz;
+                })
+                .thenComparingInt(SchematicBlock::z)
+                .thenComparingInt(SchematicBlock::x));
         resetPath();
 
         // Creative mode is allowed to fly. Enable it for this build session so high
@@ -136,7 +152,10 @@ public final class BuildEngine {
         enableCreativeFlightIfAllowed(client);
 
         if (cursor >= blocks.size()) {
-            stop("Şema tamamlandı!");
+            String completion = missingBlockSkips == 0
+                    ? "Şema tamamlandı!"
+                    : "Şema tamamlandı. Envanterinde olmayan " + missingBlockSkips + " blok atlandı.";
+            stop(completion);
             releaseAutomationInput(client);
             return;
         }
@@ -147,9 +166,10 @@ public final class BuildEngine {
 
         var blockReference = BuiltInRegistries.BLOCK.get(Identifier.parse(schematicBlock.blockId()));
         if (blockReference.isEmpty()) {
-            status = "Bilinmeyen blok: " + schematicBlock.blockId();
-            active = false;
-            releaseAutomationInput(client);
+            missingBlockSkips++;
+            cursor++;
+            resetPath();
+            status = "Oyunda bulunmayan blok atlandı: " + schematicBlock.blockId();
             return;
         }
         Block expectedBlock = blockReference.get().value();
@@ -186,9 +206,14 @@ public final class BuildEngine {
             return;
         }
 
-        int hotbarSlot = findBlockInHotbar(client, expectedBlock);
+        int hotbarSlot = findAndSelectBlockInInventory(client, expectedBlock);
         if (hotbarSlot < 0) {
-            status = "Eksik eşya: " + schematicBlock.blockId() + " (sıcak çubuk)";
+            // Missing material must not freeze the whole schematic at one position.
+            // Count this position as skipped and continue with the next block.
+            missingBlockSkips++;
+            cursor++;
+            resetPath();
+            status = "Envanterde yok, blok atlandı: " + schematicBlock.blockId();
             return;
         }
 
@@ -481,12 +506,57 @@ public final class BuildEngine {
         return Float.NaN;
     }
 
-    private static int findBlockInHotbar(Minecraft client, Block expectedBlock) {
+    /**
+     * Finds a required block in the complete 36-slot player inventory.
+     * If it is in the main inventory, swap it into an empty hotbar slot (or
+     * the currently selected slot when the hotbar is full), then select it.
+     * Returns the hotbar slot, or -1 when the player does not have the block.
+     */
+    private static int findAndSelectBlockInInventory(Minecraft client, Block expectedBlock) {
+        var inventory = client.player.getInventory();
+
+        // Prefer a block stack that's already in the hotbar.
         for (int slot = 0; slot < 9; slot++) {
-            ItemStack stack = client.player.getInventory().getItem(slot);
+            ItemStack stack = inventory.getItem(slot);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem
-                    && blockItem.getBlock() == expectedBlock) return slot;
+                    && blockItem.getBlock() == expectedBlock) {
+                inventory.setSelectedSlot(slot);
+                return slot;
+            }
         }
+
+        // PlayerInventory main slots are 9..35. Move the matching stack into
+        // a free hotbar slot so the normal placement interaction can use it.
+        for (int inventorySlot = 9; inventorySlot < 36; inventorySlot++) {
+            ItemStack stack = inventory.getItem(inventorySlot);
+            if (stack.isEmpty() || !(stack.getItem() instanceof BlockItem blockItem)
+                    || blockItem.getBlock() != expectedBlock) {
+                continue;
+            }
+
+            int destination = -1;
+            for (int hotbarSlot = 0; hotbarSlot < 9; hotbarSlot++) {
+                if (inventory.getItem(hotbarSlot).isEmpty()) {
+                    destination = hotbarSlot;
+                    break;
+                }
+            }
+
+            // If every hotbar slot is occupied, use the selected slot. The
+            // displaced item is swapped back into the source inventory slot.
+            if (destination < 0) destination = inventory.getSelectedSlot();
+
+            inventory.setSelectedSlot(destination);
+            inventory.pickSlot(inventorySlot);
+
+            ItemStack selected = inventory.getItem(destination);
+            if (!selected.isEmpty() && selected.getItem() instanceof BlockItem selectedBlock
+                    && selectedBlock.getBlock() == expectedBlock) {
+                return destination;
+            }
+            return -1;
+        }
+
         return -1;
     }
 
