@@ -11,6 +11,8 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -61,6 +63,11 @@ public final class BuildEngine {
     private static boolean ownsFlight;
     private static int missingBlockSkips;
     private static int actionCooldownTicks;
+    private static BlockPos pendingActionPos;
+    private static Block pendingActionBlock;
+    private static BlockPos pendingActionWalkTarget;
+    private static int pendingActionTicks;
+    private static BlockPos bridgeWalkTarget;
 
     private BuildEngine() {}
 
@@ -134,6 +141,8 @@ public final class BuildEngine {
         anchor = null;
         cursor = 0;
         actionCooldownTicks = 0;
+        clearPendingAction();
+        bridgeWalkTarget = null;
         rotation = "NONE";
         mirror = "NONE";
         placementName = "";
@@ -152,6 +161,35 @@ public final class BuildEngine {
             releaseAutomationFlight(client);
             return;
         }
+
+        // A placement is not considered complete until the client receives the
+        // resulting block state. This prevents repeated clicks on one unconfirmed
+        // position, which looked like the builder had frozen after a few blocks.
+        if (pendingActionPos != null) {
+            if (client.level.getBlockState(pendingActionPos).getBlock() == pendingActionBlock) {
+                BlockPos walkTarget = pendingActionWalkTarget;
+                clearPendingAction();
+                setAutoDescend(client, false);
+                if (walkTarget != null) {
+                    bridgeWalkTarget = walkTarget;
+                    resetPath();
+                }
+            } else if (++pendingActionTicks >= 40) {
+                String failedPosition = pendingActionPos.toShortString();
+                stop("Sunucu yerleştirmeyi onaylamadı: " + failedPosition
+                        + ". İşlem reddedildi veya blok güncellemesi gelmedi; otomasyon durduruldu.");
+                releaseAutomationInput(client);
+                releaseAutomationFlight(client);
+                return;
+            } else {
+                status = pendingActionWalkTarget != null
+                        ? "Destek bloğunun sunucu onayı bekleniyor..."
+                        : "Yerleştirilen bloğun sunucu onayı bekleniyor...";
+                return;
+            }
+        }
+
+        if (bridgeWalkTarget != null && moveOntoBridge(client)) return;
 
         // If the server grants flight (creative/spectator), keep the build session
         // using it. Survival never has mayfly and therefore stays ground-based.
@@ -198,15 +236,25 @@ public final class BuildEngine {
         if (existing.isAir()) {
             if (!hasAdjacentSupport(client, target)) {
                 releaseAutomationInput(client);
-                status = "Havaya blok koyma kapalı: " + target.toShortString()
-                        + " için önce komşu sağlam bir destek bloğu gerekiyor.";
+                if (actionCoolingDown) {
+                    status = "Destek yolu için yerleştirme aralığı bekleniyor...";
+                    return;
+                }
+
+                // First try a normal temporary foundation immediately beneath the
+                // schematic block. If the player is still too far away, extend a
+                // crouched horizontal bridge one supported block at a time.
+                if (tryPlaceTargetFoundation(client, target)) return;
+                if (tryBuildBridgeStep(client, target)) return;
+
+                status = "Güvenli destek yolu kurulamıyor. Şemada kullanılmayan tam bloklardan "
+                        + "bir miktar envanterinde bulundur ve aynı seviyede sağlam zeminde başla.";
                 return;
             }
 
             support = findSupport(client, target, client.player.getEyePosition());
             if (support == null) {
                 moveTowardTarget(client, target);
-                status = "Görüş hattında ve normal menzilde destek aranıyor...";
                 return;
             }
         } else if (client.player.getEyePosition().distanceToSqr(Vec3.atCenterOf(target)) > REACH_SQUARED) {
@@ -282,6 +330,10 @@ public final class BuildEngine {
 
         client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, aimedBlock);
         actionCooldownTicks = BuildSettings.getActionDelayTicks();
+        pendingActionPos = target;
+        pendingActionBlock = expectedBlock;
+        pendingActionWalkTarget = null;
+        pendingActionTicks = 0;
         status = "Bloka bakarak normal yerleştirme: " + target.toShortString();
     }
 
@@ -392,8 +444,12 @@ public final class BuildEngine {
         }
 
         if (path.isEmpty() || pathIndex >= path.size()) {
+            // No pre-existing floor route: extend a normal block bridge from the
+            // current supported tile. Each step is placed against a visible face.
+            if (tryBuildBridgeStep(client, target)) return;
             releaseAutomationInput(client);
-            status = "Bu bloğa güvenli yürüyüş yolu bulunamadı. Hayatta kalmada uçuş kullanılamaz.";
+            status = "Bu hedefe güvenli yürüyüş yolu yok. Destek için envanterinde "
+                    + "şemada kullanılmayan tam blok bulundur.";
             return;
         }
 
@@ -621,6 +677,248 @@ public final class BuildEngine {
         }
 
         return -1;
+    }
+
+    /**
+     * Walks onto the last acknowledged bridge tile using ordinary forward input.
+     * The next bridge segment is not placed until the player has reached this tile.
+     */
+    private static boolean moveOntoBridge(Minecraft client) {
+        BlockPos destination = bridgeWalkTarget;
+        if (destination == null) return false;
+
+        if (!isWalkable(client, destination)) {
+            releaseAutomationInput(client);
+            status = "Destek yolu sunucuda görünmüyor; güvenli hareket durduruldu.";
+            bridgeWalkTarget = null;
+            return false;
+        }
+
+        double dx = destination.getX() + 0.5D - client.player.getX();
+        double dz = destination.getZ() + 0.5D - client.player.getZ();
+        double dy = destination.getY() + 0.5D - client.player.getY();
+
+        if (Math.abs(dx) < 0.18D && Math.abs(dz) < 0.18D && Math.abs(dy) < 0.75D) {
+            bridgeWalkTarget = null;
+            releaseAutomationInput(client);
+            resetPath();
+            return false;
+        }
+
+        client.player.setYRot((float) Math.toDegrees(Math.atan2(-dx, dz)));
+        setAutoDescend(client, false);
+        setAutoForward(client, true);
+        setAutoJump(client, destination.getY() > client.player.blockPosition().getY());
+        status = "Eğilerek kurulan destek yoluna ilerliyor...";
+        return true;
+    }
+
+    /**
+     * Creates a one-block-high horizontal bridge from the floor tile under the
+     * player. The block is placed only on the real, visible side face of that tile.
+     */
+    private static boolean tryBuildBridgeStep(Minecraft client, BlockPos schematicTarget) {
+        if (client.player.getAbilities().flying) return false;
+
+        BlockPos feet = client.player.blockPosition();
+        if (!isWalkable(client, feet)) return false;
+
+        BlockPos floor = feet.below();
+        double currentDistance = horizontalDistance(client.player.getX(), client.player.getZ(), schematicTarget);
+        Direction bestDirection = null;
+        BlockPos bestPlacement = null;
+        BlockPos bestWalkTarget = null;
+        Support bestSupport = null;
+        double bestDistance = currentDistance;
+
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos placement = floor.relative(direction);
+            if (!client.level.getBlockState(placement).isAir()) continue;
+
+            BlockPos nextFeet = placement.above();
+            BlockState feetState = client.level.getBlockState(nextFeet);
+            BlockState headState = client.level.getBlockState(nextFeet.above());
+            if (!feetState.getCollisionShape(client.level, nextFeet).isEmpty()
+                    || !headState.getCollisionShape(client.level, nextFeet.above()).isEmpty()
+                    || !feetState.getFluidState().isEmpty()
+                    || !headState.getFluidState().isEmpty()) {
+                continue;
+            }
+
+            double nextDistance = horizontalDistance(nextFeet.getX() + 0.5D,
+                    nextFeet.getZ() + 0.5D, schematicTarget);
+            if (nextDistance >= bestDistance - 0.10D) continue;
+
+            Support support = findSupport(client, placement, client.player.getEyePosition());
+            if (support == null || !support.blockPos().equals(floor)
+                    || support.clickedFace() != direction) {
+                continue;
+            }
+
+            bestDistance = nextDistance;
+            bestDirection = direction;
+            bestPlacement = placement;
+            bestWalkTarget = nextFeet;
+            bestSupport = support;
+        }
+
+        if (bestDirection == null) return false;
+        return placeSupportBlock(client, bestPlacement, bestSupport, bestWalkTarget,
+                "Eğilerek destek yolu döşeniyor...");
+    }
+
+    /**
+     * For the first block of a floating schematic section, try placing one spare
+     * support block directly underneath it, using an adjacent visible block face.
+     */
+    private static boolean tryPlaceTargetFoundation(Minecraft client, BlockPos target) {
+        BlockPos foundation = target.below();
+        if (!client.level.getBlockState(foundation).isAir()) return false;
+
+        Support support = findSupport(client, foundation, client.player.getEyePosition());
+        if (support == null) return false;
+
+        return placeSupportBlock(client, foundation, support, null,
+                "Şema bloğunun altına geçici destek yerleştiriliyor...");
+    }
+
+    /**
+     * Uses only a full-cube block stack that is surplus to the remaining schematic.
+     * It avoids falling blocks and block-entity blocks. No required schematic stack
+     * is consumed for scaffolding.
+     */
+    private static int findAndSelectSurplusSupportBlock(Minecraft client) {
+        Map<String, Integer> needed = new HashMap<>();
+        for (int i = cursor; i < blocks.size(); i++) {
+            needed.merge(blocks.get(i).blockId(), 1, Integer::sum);
+        }
+
+        Map<String, Integer> available = new HashMap<>();
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack stack = client.player.getInventory().getItem(slot);
+            if (stack.isEmpty() || !(stack.getItem() instanceof BlockItem blockItem)) continue;
+            String id = BuiltInRegistries.BLOCK.getKey(blockItem.getBlock()).toString();
+            available.merge(id, stack.getCount(), Integer::sum);
+        }
+
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack stack = client.player.getInventory().getItem(slot);
+            if (stack.isEmpty() || !(stack.getItem() instanceof BlockItem blockItem)) continue;
+
+            Block block = blockItem.getBlock();
+            String id = BuiltInRegistries.BLOCK.getKey(block).toString();
+            if (available.getOrDefault(id, 0) <= needed.getOrDefault(id, 0)) continue;
+            if (block instanceof FallingBlock || block instanceof BaseEntityBlock) continue;
+
+            String path = id.substring(id.indexOf(':') + 1);
+            if (path.contains("slab") || path.contains("stairs") || path.contains("wall")
+                    || path.contains("fence") || path.contains("pane") || path.contains("door")
+                    || path.contains("trapdoor") || path.contains("carpet") || path.contains("torch")
+                    || path.contains("rail") || path.contains("button") || path.contains("pressure_plate")) {
+                continue;
+            }
+
+            BlockState state = block.defaultBlockState();
+            if (!state.getFluidState().isEmpty()) continue;
+            AABB bounds = state.getCollisionShape(client.level, BlockPos.ZERO).bounds();
+            if (bounds.minX > 0.01D || bounds.minY > 0.01D || bounds.minZ > 0.01D
+                    || bounds.maxX < 0.99D || bounds.maxY < 0.99D || bounds.maxZ < 0.99D) {
+                continue;
+            }
+
+            return selectBlockFromInventory(client, block);
+        }
+        return -1;
+    }
+
+    private static int selectBlockFromInventory(Minecraft client, Block expectedBlock) {
+        var inventory = client.player.getInventory();
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem
+                    && blockItem.getBlock() == expectedBlock) {
+                inventory.setSelectedSlot(slot);
+                return slot;
+            }
+        }
+
+        for (int inventorySlot = 9; inventorySlot < 36; inventorySlot++) {
+            ItemStack stack = inventory.getItem(inventorySlot);
+            if (stack.isEmpty() || !(stack.getItem() instanceof BlockItem blockItem)
+                    || blockItem.getBlock() != expectedBlock) continue;
+
+            int destination = -1;
+            for (int hotbarSlot = 0; hotbarSlot < 9; hotbarSlot++) {
+                if (inventory.getItem(hotbarSlot).isEmpty()) {
+                    destination = hotbarSlot;
+                    break;
+                }
+            }
+            if (destination < 0) destination = inventory.getSelectedSlot();
+
+            inventory.setSelectedSlot(destination);
+            inventory.pickSlot(inventorySlot);
+            ItemStack selected = inventory.getItem(destination);
+            if (!selected.isEmpty() && selected.getItem() instanceof BlockItem selectedBlock
+                    && selectedBlock.getBlock() == expectedBlock) return destination;
+            return -1;
+        }
+        return -1;
+    }
+
+    private static boolean placeSupportBlock(Minecraft client, BlockPos placePos, Support support,
+                                             BlockPos walkTarget, String actionMessage) {
+        int slot = findAndSelectSurplusSupportBlock(client);
+        if (slot < 0) {
+            status = "Destek yolu için şemada kullanılmayan tam blok yok. Envantere yedek blok ekle.";
+            return false;
+        }
+
+        ItemStack selected = client.player.getInventory().getItem(slot);
+        if (selected.isEmpty() || !(selected.getItem() instanceof BlockItem blockItem)) return false;
+        Block supportBlock = blockItem.getBlock();
+        client.player.getInventory().setSelectedSlot(slot);
+
+        // Sneak at the edge so forward movement cannot step off the current tile.
+        setAutoForward(client, false);
+        setAutoJump(client, false);
+        setAutoDescend(client, true);
+
+        if (!aimAt(client, support.hitLocation())) {
+            status = actionMessage + " (yüzeye dönüyor)";
+            return true;
+        }
+
+        HitResult result = client.player.pick(4.5D, 1.0F, false);
+        if (!(result instanceof BlockHitResult aimedBlock)
+                || aimedBlock.getType() != HitResult.Type.BLOCK
+                || !aimedBlock.getBlockPos().equals(support.blockPos())
+                || aimedBlock.getDirection() != support.clickedFace()) {
+            status = actionMessage + " (gerçek nişangâh kontrol ediliyor)";
+            return true;
+        }
+
+        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, aimedBlock);
+        actionCooldownTicks = BuildSettings.getActionDelayTicks();
+        pendingActionPos = placePos;
+        pendingActionBlock = supportBlock;
+        pendingActionWalkTarget = walkTarget;
+        pendingActionTicks = 0;
+        status = actionMessage;
+        return true;
+    }
+
+    private static double horizontalDistance(double x, double z, BlockPos target) {
+        double dx = target.getX() + 0.5D - x;
+        double dz = target.getZ() + 0.5D - z;
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    private static void clearPendingAction() {
+        pendingActionPos = null;
+        pendingActionBlock = null;
+        pendingActionWalkTarget = null;
+        pendingActionTicks = 0;
     }
 
     private static boolean hasAdjacentSupport(Minecraft client, BlockPos target) {
