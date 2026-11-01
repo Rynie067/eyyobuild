@@ -27,6 +27,15 @@ public final class LitematicaPlacementBridge {
                 return Result.failure("Litematica'da seçili bir şema yerleşimi yok. Yerleşimi seç (beyaz çerçeve).");
             }
 
+            Object placementsValue = manager.getClass().getMethod("getAllSchematicsPlacements").invoke(manager);
+            if (!(placementsValue instanceof java.util.List<?> placements)) {
+                return Result.failure("Litematica yerleşim listesi okunamadı.");
+            }
+            int placementIndex = placements.indexOf(placement);
+            if (placementIndex < 0) {
+                return Result.failure("Seçili Litematica yerleşimi listede bulunamadı.");
+            }
+
             Object enabled = placement.getClass().getMethod("isEnabled").invoke(placement);
             if (enabled instanceof Boolean value && !value) {
                 return Result.failure("Seçili Litematica yerleşimi devre dışı.");
@@ -53,7 +62,7 @@ public final class LitematicaPlacementBridge {
             String rotation = enumName(placement.getClass().getMethod("getRotation").invoke(placement));
             String mirror = enumName(placement.getClass().getMethod("getMirror").invoke(placement));
             String name = String.valueOf(placement.getClass().getMethod("getName").invoke(placement));
-            return Result.success(origin, rotation, mirror, name);
+            return Result.success(origin, rotation, mirror, name, placementIndex);
         } catch (ClassNotFoundException exception) {
             return Result.failure("Litematica API'si bulunamadı. Litematica sürümünü kontrol et.");
         } catch (ReflectiveOperationException | LinkageError exception) {
@@ -81,13 +90,14 @@ public final class LitematicaPlacementBridge {
     }
 
     public record Result(boolean success, BlockPos origin, String rotation, String mirror,
-                         String placementName, String message) {
-        public static Result success(BlockPos origin, String rotation, String mirror, String placementName) {
-            return new Result(true, origin, rotation, mirror, placementName, "");
+                         String placementName, int placementIndex, String message) {
+        public static Result success(BlockPos origin, String rotation, String mirror,
+                                     String placementName, int placementIndex) {
+            return new Result(true, origin, rotation, mirror, placementName, placementIndex, "");
         }
 
         public static Result failure(String message) {
-            return new Result(false, null, "NONE", "NONE", "", message);
+            return new Result(false, null, "NONE", "NONE", "", -1, message);
         }
     }
 }
