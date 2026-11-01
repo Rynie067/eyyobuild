@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica schematic reader and visible auto-builder for Minecraft Java 26.2.
 
-## Current status — 0.2.0-alpha.1
+## Current status — 0.2.0-alpha.2
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings.
@@ -11,7 +11,7 @@ EYYOBUILD is a client-side Litematica schematic reader and visible auto-builder 
 - Reads Litematica region Position/Size compounds, palettes, block properties and packed BlockStates.
 - Decodes schematic block coordinates (X-fastest, then Z, then Y) and normalizes multi-region layouts.
 - Shows schematic dimensions, region count and the number of non-air blocks to place.
-- Includes a visible single-player build executor with walking, jump-step handling, sneak placement, hotbar block selection and obstruction breaking.
+- Includes a visible schematic build executor with walking, jump-step handling, sneak placement, hotbar block selection and obstruction breaking.
 - Stops when a required block is missing, a block entity would be damaged, the world closes, or no safe path can be found.
 
 ## Controls
@@ -37,13 +37,14 @@ The schematic origin is placed one block in front of the player. Build order is 
 
 ## Important limitations
 
-- **Auto-build is single-player only.** It will not start on multiplayer servers and does not bypass anti-cheat or server rules.
+- Auto-build can run in single-player and multiplayer. Multiplayer interactions are sent through the normal client game interaction path; the server remains authoritative and may reject placement, breaking or movement.
+- It does not bypass anti-cheat, permissions, region protection, cooldowns or server rules. Use it only on servers where automation is permitted.
 - The navigation system handles simple, walkable ground and one-block steps. It is not a full parkour, scaffold, swimming, ladder or flying pathfinder.
 - Required blocks must be in the hotbar. The mod pauses and identifies a missing item instead of silently substituting another block.
 - Block IDs and palette properties are decoded. Vanilla placement determines some directional/shape properties; complex blocks such as redstone, rails, doors, beds, waterlogged blocks and tile-entity contents may need manual correction.
 - Existing block entities (chests, barrels, furnaces, etc.) are protected from automatic breaking.
 - Large schematics are limited to 8 million decoded positions to avoid excessive memory usage.
-- This alpha has not been integration-tested in a live Minecraft world. Test on a backup copy of a single-player world first.
+- This alpha has not been integration-tested in a live Minecraft world. Test on a backup copy of a world first. On multiplayer, test only where you have permission to automate building.
 
 ## Build
 

@@ -109,7 +109,7 @@ public final class EyyobuildScreen extends Screen {
         String buildState = BuilderSession.status();
         int stateColor = BuilderSession.isActive() ? 0xFF8FE3B0 : 0xFFFFC58A;
         graphics.text(this.font, trim(buildState, 70), left + 20, bottom - 58, stateColor, true);
-        graphics.text(this.font, "B: arayüz  |  H: başlat/durdur  |  Otomasyon: tek oyunculu", left + 20, bottom - 38, 0xFFB8C1D1, false);
+        graphics.text(this.font, "B: arayüz  |  H: başlat/durdur  |  Çok oyunculu: sunucu izinlerine bağlı", left + 20, bottom - 38, 0xFFB8C1D1, false);
     }
 
     private static String trim(String value, int maxLength) {

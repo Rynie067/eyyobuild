@@ -25,10 +25,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Visible local-world build executor.
+ * Visible schematic build executor.
  *
- * It uses ordinary client interactions and movement keys; it does not send custom packets,
- * bypass server checks, or run on multiplayer servers. Navigation is deliberately bounded.
+ * It uses ordinary client interactions and movement keys. In multiplayer, the server remains
+ * authoritative: protected areas, permissions, anti-cheat and rejected interactions are respected.
+ * Navigation is deliberately bounded.
  */
 public final class BuildEngine {
     private static final int MAX_PATH_NODES = 12_000;
@@ -58,10 +59,6 @@ public final class BuildEngine {
         stop("Hazır.");
         if (client.player == null || client.level == null) {
             status = "Önce bir dünyaya gir.";
-            return;
-        }
-        if (!client.hasSingleplayerServer()) {
-            status = "Otomatik inşaat yalnızca tek oyunculu dünyada etkin.";
             return;
         }
         if (schematic == null || !schematic.readable() || schematic.blocks().isEmpty()) {
@@ -100,7 +97,7 @@ public final class BuildEngine {
             releaseMovement(client);
             return;
         }
-        if (client.player == null || client.level == null || !client.hasSingleplayerServer()) {
+        if (client.player == null || client.level == null) {
             stop("Dünya kapandı; inşaat durduruldu.");
             releaseMovement(client);
             return;
