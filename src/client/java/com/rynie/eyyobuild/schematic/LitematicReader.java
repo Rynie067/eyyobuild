@@ -150,10 +150,12 @@ public final class LitematicReader {
         List<SchematicBlock> blocks = new ArrayList<>(decoded.size());
         if (!decoded.isEmpty()) {
             for (AbsoluteBlock block : decoded) {
+                // Keep Litematica's coordinates relative to the placement origin.
+                // Normalizing to the schematic's minimum corner shifts negative-offset regions.
                 blocks.add(new SchematicBlock(
-                        block.x() - minX,
-                        block.y() - minY,
-                        block.z() - minZ,
+                        block.x(),
+                        block.y(),
+                        block.z(),
                         block.blockId(),
                         block.properties()
                 ));

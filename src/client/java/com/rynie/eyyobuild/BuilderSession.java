@@ -3,7 +3,7 @@ package com.rynie.eyyobuild;
 import com.rynie.eyyobuild.schematic.SchematicSummary;
 import net.minecraft.client.Minecraft;
 
-/** Public entry point for the visible, single-player schematic builder session. */
+/** Public entry point for the visible schematic builder session. */
 public final class BuilderSession {
     private BuilderSession() {}
 

@@ -1,18 +1,28 @@
 # EYYOBUILD
 
-EYYOBUILD is a client-side Litematica schematic reader and visible auto-builder for Minecraft Java 26.2.
+EYYOBUILD is a client-side Litematica schematic reader and assisted auto-builder for Minecraft Java 26.2.
 
-## Current status — 0.2.0-alpha.2
+## Current status — 0.2.1-alpha.1
 
 - Fabric 26.2 / Java 25.
-- Exactly two configurable EYYOBUILD key mappings.
-- In-game schematic selection screen.
-- Scans the game's `schematics/` folder for `.litematic` files.
-- Reads Litematica region Position/Size compounds, palettes, block properties and packed BlockStates.
-- Decodes schematic block coordinates (X-fastest, then Z, then Y) and normalizes multi-region layouts.
-- Shows schematic dimensions, region count and the number of non-air blocks to place.
-- Includes a visible schematic build executor with walking, jump-step handling, sneak placement, hotbar block selection and obstruction breaking.
-- Stops when a required block is missing, a block entity would be damaged, the world closes, or no safe path can be found.
+- Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops building.
+- Reads Litematica region positions/sizes, palettes, block properties and packed BlockStates.
+- Keeps each region's coordinates relative to the actual Litematica schematic origin, including negative region offsets.
+- Reads the currently selected Litematica placement's world origin, rotation and mirror settings.
+- Places decoded blocks at the selected Litematica placement, not at the player's feet.
+- Does not write to WASD, jump, sneak or other movement key mappings. The player can walk, jump and fly normally while the builder runs.
+- Does not move or rotate the player. If a target is outside interaction reach, it waits for the player to move/fly closer.
+- Selects matching block items from the hotbar, skips blocks already correct, protects block entities, and removes incorrect non-container blocks when permitted.
+
+## Setup
+
+1. Install **Litematica** and its required dependency, **MaLiLib**, for your Minecraft 26.2 environment.
+2. Put the same `.litematic` file into EYYOBUILD's game `schematics/` folder.
+3. In Litematica, load the schematic and create a placement. Select that placement in the Schematic Placements list.
+4. Press **B** in EYYOBUILD and select the matching `.litematic` file.
+5. Keep the required blocks in your hotbar.
+6. Press **H** to start and **H** again to stop.
+7. Fly/walk normally around the build. EYYOBUILD never takes control of your movement; it places blocks only when you are close enough.
 
 ## Controls
 
@@ -21,30 +31,19 @@ EYYOBUILD is a client-side Litematica schematic reader and visible auto-builder 
 | Open EYYOBUILD UI | B |
 | Start / stop auto-build | H |
 
-Both keys can be changed in **Options → Controls → Key Binds → EYYOBUILD**. There are no extra refresh or navigation keybinds; those actions are inside the UI.
-
-## Schematic setup
-
-1. Launch Minecraft once with EYYOBUILD installed.
-2. Put your `.litematic` files into the game's `schematics/` folder.
-3. Press **B** and choose a schematic.
-4. Stand at the intended starting corner and face the direction in which the schematic should extend.
-5. Keep the required block items in your hotbar.
-6. Press **H** or the UI's **İnşaatı başlat** button.
-7. Press **H** again to stop at any time.
-
-The schematic origin is placed one block in front of the player. Build order is bottom-up. Movement uses normal client movement keys and interactions use the normal block interaction API.
+Both keys can be changed in **Options → Controls → Key Binds → EYYOBUILD**.
 
 ## Important limitations
 
-- Auto-build can run in single-player and multiplayer. Multiplayer interactions are sent through the normal client game interaction path; the server remains authoritative and may reject placement, breaking or movement.
-- It does not bypass anti-cheat, permissions, region protection, cooldowns or server rules. Use it only on servers where automation is permitted.
-- The navigation system handles simple, walkable ground and one-block steps. It is not a full parkour, scaffold, swimming, ladder or flying pathfinder.
-- Required blocks must be in the hotbar. The mod pauses and identifies a missing item instead of silently substituting another block.
-- Block IDs and palette properties are decoded. Vanilla placement determines some directional/shape properties; complex blocks such as redstone, rails, doors, beds, waterlogged blocks and tile-entity contents may need manual correction.
-- Existing block entities (chests, barrels, furnaces, etc.) are protected from automatic breaking.
-- Large schematics are limited to 8 million decoded positions to avoid excessive memory usage.
-- This alpha has not been integration-tested in a live Minecraft world. Test on a backup copy of a world first. On multiplayer, test only where you have permission to automate building.
+- EYYOBUILD uses the selected Litematica placement's origin/rotation/mirror. The selected placement must reference the exact same file selected in EYYOBUILD.
+- The first block of a completely floating build still needs a normal solid adjacent support block. Vanilla block placement cannot place a block into completely empty air. Place a temporary starting support block yourself, or use a server/world that explicitly allows such placement.
+- The player must fly/walk within normal interaction reach of each target. EYYOBUILD deliberately does not auto-walk or auto-fly, so it cannot push the player off a ledge or interrupt creative flight.
+- In multiplayer, the server remains authoritative and may reject block placement or breaking. EYYOBUILD does not bypass anti-cheat, permissions, region protection, cooldowns or server rules. Use it only where automation is permitted.
+- Required block items must be in the hotbar. Missing blocks pause progress.
+- Existing block entities (chests, barrels, furnaces, etc.) are protected.
+- Per-subregion Litematica offsets/rotation/mirror settings and complex block state orientation (for example every rail/redstone shape) are not fully reproduced yet. Review those parts manually.
+- Large schematics are limited to 8 million decoded positions to avoid excessive memory use.
+- This alpha has not been tested in every modpack/server. Test on a backup world first.
 
 ## Build
 
@@ -54,7 +53,7 @@ Requirements: JDK 25 and Gradle 9.5.1.
 gradle build
 ```
 
-The mod JAR is written to `build/libs/`. GitHub Actions builds pushes and creates a GitHub Release when a `v*` tag is pushed.
+The mod JAR is written to `build/libs/`. GitHub Actions builds pushes and creates a GitHub pre-release.
 
 ## Versioning
 

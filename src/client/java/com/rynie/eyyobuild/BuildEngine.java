@@ -15,35 +15,25 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
- * Visible schematic build executor.
- *
- * It uses ordinary client interactions and movement keys. In multiplayer, the server remains
- * authoritative: protected areas, permissions, anti-cheat and rejected interactions are respected.
- * Navigation is deliberately bounded.
+ * Places decoded blocks at the active Litematica placement origin.
+ * Does not write to movement keys, sneak, or move the player.
  */
 public final class BuildEngine {
-    private static final int MAX_PATH_NODES = 12_000;
-    private static final int MAX_PATH_RADIUS = 28;
+    private static final double REACH_SQUARED = 20.25;
 
     private static boolean active;
     private static String status = "Hazır.";
     private static List<SchematicBlock> blocks = List.of();
     private static BlockPos anchor;
     private static int cursor;
-    private static int attempts;
-    private static BlockPos pathTarget;
-    private static List<BlockPos> path = List.of();
-    private static int pathIndex;
+    private static String rotation = "NONE";
+    private static String mirror = "NONE";
+    private static String placementName = "";
 
     private BuildEngine() {}
 
@@ -66,18 +56,24 @@ public final class BuildEngine {
             return;
         }
 
+        LitematicaPlacementBridge.Result placement =
+                LitematicaPlacementBridge.findSelectedPlacement(schematic.path());
+        if (!placement.success()) {
+            status = placement.message();
+            return;
+        }
+
         blocks = new ArrayList<>(schematic.blocks());
         blocks.sort(Comparator.comparingInt(SchematicBlock::y)
                 .thenComparingInt(SchematicBlock::z)
                 .thenComparingInt(SchematicBlock::x));
-        anchor = client.player.blockPosition().relative(client.player.getDirection());
+        anchor = placement.origin();
+        rotation = placement.rotation();
+        mirror = placement.mirror();
+        placementName = placement.placementName();
         cursor = 0;
-        attempts = 0;
-        pathTarget = null;
-        path = List.of();
-        pathIndex = 0;
         active = true;
-        status = "İnşaat başladı.";
+        status = "Şema konumu alındı: " + anchor.toShortString() + " (" + placementName + ").";
     }
 
     public static synchronized void stop(String message) {
@@ -86,31 +82,26 @@ public final class BuildEngine {
         blocks = List.of();
         anchor = null;
         cursor = 0;
-        attempts = 0;
-        pathTarget = null;
-        path = List.of();
-        pathIndex = 0;
+        rotation = "NONE";
+        mirror = "NONE";
+        placementName = "";
     }
 
     public static synchronized void tick(Minecraft client) {
-        if (!active) {
-            releaseMovement(client);
-            return;
-        }
+        if (!active) return;
         if (client.player == null || client.level == null) {
             stop("Dünya kapandı; inşaat durduruldu.");
-            releaseMovement(client);
             return;
         }
-
-        releaseMovement(client);
         if (cursor >= blocks.size()) {
             stop("Şema tamamlandı!");
             return;
         }
 
         SchematicBlock schematicBlock = blocks.get(cursor);
-        BlockPos target = anchor.offset(schematicBlock.x(), schematicBlock.y(), schematicBlock.z());
+        BlockPos offset = transform(schematicBlock.x(), schematicBlock.y(), schematicBlock.z());
+        BlockPos target = anchor.offset(offset.getX(), offset.getY(), offset.getZ());
+
         var blockReference = BuiltInRegistries.BLOCK.get(Identifier.parse(schematicBlock.blockId()));
         if (blockReference.isEmpty()) {
             status = "Bilinmeyen blok: " + schematicBlock.blockId();
@@ -122,27 +113,27 @@ public final class BuildEngine {
         BlockState existing = client.level.getBlockState(target);
         if (existing.getBlock() == expectedBlock) {
             cursor++;
-            attempts = 0;
-            pathTarget = null;
-            path = List.of();
-            status = "Bloklar yerleştiriliyor.";
+            status = "Bloklar yerleştiriliyor...";
+            return;
+        }
+
+        if (client.player.distanceToSqr(Vec3.atCenterOf(target)) > REACH_SQUARED) {
+            status = "Hedef menzil dışında (" + target.toShortString()
+                    + "). Uçarak/yürüyerek yaklaş; oyuncu hareketine dokunulmuyor.";
             return;
         }
 
         if (!existing.isAir()) {
             if (client.level.getBlockEntity(target) != null) {
-                status = "Sandık/varil gibi blok güvenlik için korunuyor: " + target.toShortString();
+                status = "Blok varlığı korunuyor: " + target.toShortString();
                 active = false;
                 return;
             }
-            if (client.player.distanceToSqr(Vec3.atCenterOf(target)) > 20.25) {
-                moveNear(client, target);
-                return;
-            }
             boolean destroyed = client.gameMode.destroyBlock(target);
-            status = destroyed ? "Yanlış blok kırılıyor..." : "Blok kırılamadı; işlem duraklatıldı.";
+            status = destroyed
+                    ? "Yanlış blok kaldırılıyor: " + target.toShortString()
+                    : "Blok kırılamadı; sunucu işlemi reddetmiş olabilir.";
             if (!destroyed) active = false;
-            attempts++;
             return;
         }
 
@@ -151,41 +142,81 @@ public final class BuildEngine {
             status = "Eksik eşya: " + schematicBlock.blockId() + " (sıcak çubuk)";
             return;
         }
-        client.player.getInventory().setSelectedSlot(hotbarSlot);
-
-        if (client.player.distanceToSqr(Vec3.atCenterOf(target)) > 20.25) {
-            moveNear(client, target);
-            return;
-        }
 
         Support support = findSupport(client, target);
         if (support == null) {
-            status = "Destek blok bekleniyor: " + target.toShortString();
-            attempts++;
-            if (attempts > 200) {
-                status = "Bu konuma yerleştirmek için destek blok veya erişim gerekiyor.";
-                attempts = 0;
-            }
+            status = "Havada desteksiz blok: " + target.toShortString()
+                    + ". İlk blok için komşu sağlam bir destek bloğu gerekir.";
             return;
         }
 
-        orientForPlacement(client, schematicBlock);
-        client.options.keyShift.setDown(true);
-        BlockHitResult hit = new BlockHitResult(
-                support.hitLocation(), support.clickedFace(), support.blockPos(), false
-        );
-        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit);
-        status = "Blok yerleştiriliyor...";
-        attempts++;
+        client.player.getInventory().setSelectedSlot(hotbarSlot);
+        float originalYaw = client.player.getYRot();
+        float placementYaw = yawForFacing(schematicBlock.properties().get("facing"));
+        try {
+            if (!Float.isNaN(placementYaw)) client.player.setYRot(placementYaw);
+            BlockHitResult hit = new BlockHitResult(
+                    support.hitLocation(), support.clickedFace(), support.blockPos(), false
+            );
+            client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, hit);
+            status = "Blok yerleştiriliyor: " + target.toShortString();
+        } finally {
+            client.player.setYRot(originalYaw);
+        }
+    }
+
+    private static BlockPos transform(int sourceX, int sourceY, int sourceZ) {
+        int x = sourceX;
+        int y = sourceY;
+        int z = sourceZ;
+
+        // Match Litematica PositionUtils: mirror first, then rotate.
+        if ("LEFT_RIGHT".equals(mirror)) z = -z;
+        else if ("FRONT_BACK".equals(mirror)) x = -x;
+
+        return switch (rotation) {
+            case "CLOCKWISE_90" -> new BlockPos(-z, y, x);
+            case "COUNTERCLOCKWISE_90" -> new BlockPos(z, y, -x);
+            case "CLOCKWISE_180" -> new BlockPos(-x, y, -z);
+            default -> new BlockPos(x, y, z);
+        };
+    }
+
+    private static float yawForFacing(String facing) {
+        if (facing == null) return Float.NaN;
+        int x = 0;
+        int z = 0;
+        switch (facing) {
+            case "north" -> z = -1;
+            case "south" -> z = 1;
+            case "west" -> x = -1;
+            case "east" -> x = 1;
+            default -> { return Float.NaN; }
+        }
+
+        if ("LEFT_RIGHT".equals(mirror)) z = -z;
+        else if ("FRONT_BACK".equals(mirror)) x = -x;
+
+        int tx = x;
+        int tz = z;
+        switch (rotation) {
+            case "CLOCKWISE_90" -> { tx = -z; tz = x; }
+            case "COUNTERCLOCKWISE_90" -> { tx = z; tz = -x; }
+            case "CLOCKWISE_180" -> { tx = -x; tz = -z; }
+        }
+
+        if (tz > 0) return 0.0F;
+        if (tx < 0) return 90.0F;
+        if (tz < 0) return 180.0F;
+        if (tx > 0) return -90.0F;
+        return Float.NaN;
     }
 
     private static int findBlockInHotbar(Minecraft client, Block expectedBlock) {
         for (int slot = 0; slot < 9; slot++) {
             ItemStack stack = client.player.getInventory().getItem(slot);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem
-                    && blockItem.getBlock() == expectedBlock) {
-                return slot;
-            }
+                    && blockItem.getBlock() == expectedBlock) return slot;
         }
         return -1;
     }
@@ -194,135 +225,17 @@ public final class BuildEngine {
         for (Direction side : Direction.values()) {
             BlockPos supportPos = target.relative(side);
             BlockState supportState = client.level.getBlockState(supportPos);
-            if (!supportState.isAir()) {
-                Direction clickedFace = side.getOpposite();
-                Vec3 hitLocation = Vec3.atCenterOf(supportPos).add(
-                        clickedFace.getStepX() * 0.499,
-                        clickedFace.getStepY() * 0.499,
-                        clickedFace.getStepZ() * 0.499
-                );
-                return new Support(supportPos, clickedFace, hitLocation);
-            }
+            if (supportState.isAir() || client.level.getBlockEntity(supportPos) != null) continue;
+
+            Direction clickedFace = side.getOpposite();
+            Vec3 hitLocation = Vec3.atCenterOf(supportPos).add(
+                    clickedFace.getStepX() * 0.499,
+                    clickedFace.getStepY() * 0.499,
+                    clickedFace.getStepZ() * 0.499
+            );
+            return new Support(supportPos, clickedFace, hitLocation);
         }
         return null;
-    }
-
-    private static void moveNear(Minecraft client, BlockPos target) {
-        BlockPos feet = client.player.blockPosition();
-        if (client.player.distanceToSqr(Vec3.atCenterOf(target)) <= 20.25) {
-            return;
-        }
-
-        if (pathTarget == null || !pathTarget.equals(target) || path.isEmpty()) {
-            pathTarget = target;
-            path = findPath(client, feet, target);
-            pathIndex = Math.min(1, Math.max(0, path.size() - 1));
-        }
-
-        if (path.isEmpty() || pathIndex >= path.size()) {
-            status = "Güvenli yürüyüş yolu bulunamadı.";
-            return;
-        }
-
-        BlockPos next = path.get(pathIndex);
-        double dx = (next.getX() + 0.5) - client.player.getX();
-        double dz = (next.getZ() + 0.5) - client.player.getZ();
-        if (Math.abs(dx) < 0.18 && Math.abs(dz) < 0.18
-                && Math.abs(next.getY() - client.player.getY()) < 0.8) {
-            pathIndex++;
-            if (pathIndex >= path.size()) {
-                path = List.of();
-                status = "İnşaat alanına ulaşıldı.";
-                return;
-            }
-            next = path.get(pathIndex);
-            dx = (next.getX() + 0.5) - client.player.getX();
-            dz = (next.getZ() + 0.5) - client.player.getZ();
-        }
-
-        float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        client.player.setYRot(yaw);
-        client.options.keyUp.setDown(true);
-        if (next.getY() > feet.getY()) {
-            client.options.keyJump.setDown(true);
-        }
-        status = "Otomatik yürüyor...";
-    }
-
-    private static List<BlockPos> findPath(Minecraft client, BlockPos start, BlockPos target) {
-        ArrayDeque<BlockPos> queue = new ArrayDeque<>();
-        Map<BlockPos, BlockPos> previous = new HashMap<>();
-        Set<BlockPos> visited = new HashSet<>();
-        queue.add(start);
-        visited.add(start);
-        BlockPos goal = null;
-        int examined = 0;
-
-        while (!queue.isEmpty() && examined++ < MAX_PATH_NODES) {
-            BlockPos current = queue.removeFirst();
-            if (isBuildStandPosition(client, current, target)) {
-                goal = current;
-                break;
-            }
-            if (Math.abs(current.getX() - start.getX()) > MAX_PATH_RADIUS
-                    || Math.abs(current.getZ() - start.getZ()) > MAX_PATH_RADIUS
-                    || Math.abs(current.getY() - start.getY()) > 5) {
-                continue;
-            }
-
-            for (Direction direction : Direction.Plane.HORIZONTAL) {
-                for (int dy = 1; dy >= -1; dy--) {
-                    BlockPos next = current.relative(direction).offset(0, dy, 0);
-                    if (visited.contains(next) || !isWalkable(client, next)) continue;
-                    visited.add(next);
-                    previous.put(next, current);
-                    queue.addLast(next);
-                }
-            }
-        }
-
-        if (goal == null) return List.of();
-        ArrayList<BlockPos> result = new ArrayList<>();
-        for (BlockPos cursor = goal; cursor != null; cursor = previous.get(cursor)) {
-            result.add(cursor);
-            if (cursor.equals(start)) break;
-        }
-        java.util.Collections.reverse(result);
-        return result;
-    }
-
-    private static boolean isBuildStandPosition(Minecraft client, BlockPos feet, BlockPos target) {
-        if (!isWalkable(client, feet)) return false;
-        return Vec3.atCenterOf(feet).distanceToSqr(Vec3.atCenterOf(target)) <= 20.25;
-    }
-
-    private static boolean isWalkable(Minecraft client, BlockPos feet) {
-        return client.level.getBlockState(feet).isAir()
-                && client.level.getBlockState(feet.above()).isAir()
-                && !client.level.getBlockState(feet.below()).isAir();
-    }
-
-    private static void orientForPlacement(Minecraft client, SchematicBlock block) {
-        String facing = block.properties().get("facing");
-        if (facing == null) return;
-        float yaw = switch (facing) {
-            case "south" -> 0.0F;
-            case "west" -> 90.0F;
-            case "north" -> 180.0F;
-            case "east" -> -90.0F;
-            default -> client.player.getYRot();
-        };
-        client.player.setYRot(yaw);
-    }
-
-    private static void releaseMovement(Minecraft client) {
-        if (client == null || client.options == null) return;
-        client.options.keyUp.setDown(false);
-        client.options.keyDown.setDown(false);
-        client.options.keyLeft.setDown(false);
-        client.options.keyRight.setDown(false);
-        client.options.keyJump.setDown(false);
-        client.options.keyShift.setDown(false);
     }
 
     private record Support(BlockPos blockPos, Direction clickedFace, Vec3 hitLocation) {}
