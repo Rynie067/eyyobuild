@@ -486,8 +486,16 @@ public final class BuildEngine {
      * Block entities and unbreakable blocks are never touched. A successful
      * break waits for the server's air-state confirmation before continuing.
      */
+    private static Vec3 centerOf(BlockPos pos) {
+        return new Vec3(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+    }
+
     private static boolean clearPathObstruction(Minecraft client, BlockPos destination) {
         for (BlockPos obstruction : List.of(destination, destination.above())) {
+            if (actionCooldownTicks > 0) {
+                status = "Yol engeli için kırma aralığı bekleniyor...";
+                return true;
+            }
             BlockState state = client.level.getBlockState(obstruction);
             if (state.getCollisionShape(client.level, obstruction).isEmpty()) continue;
 
@@ -499,7 +507,7 @@ public final class BuildEngine {
                 return true;
             }
 
-            if (client.player.getEyePosition().distanceToSqr(Vec3.atCenter(obstruction)) > REACH_SQUARED) {
+            if (client.player.getEyePosition().distanceToSqr(centerOf(obstruction)) > REACH_SQUARED) {
                 return false;
             }
 
