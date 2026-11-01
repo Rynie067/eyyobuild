@@ -301,13 +301,17 @@ public final class BuildEngine {
         float targetPitch = (float) -Math.toDegrees(Math.atan2(dy, horizontal));
         targetPitch = Math.max(-90.0F, Math.min(90.0F, targetPitch));
 
-        float nextYaw = stepAngle(client.player.getYRot(), targetYaw, 35.0F);
-        float nextPitch = stepLinear(client.player.getXRot(), targetPitch, 25.0F);
-        client.player.setYRot(nextYaw);
-        client.player.setXRot(nextPitch);
+        float currentYaw = client.player.getYRot();
+        float currentPitch = client.player.getXRot();
+        boolean alreadyAimed = Math.abs(wrapDegrees(targetYaw - currentYaw)) < 0.5F
+                && Math.abs(targetPitch - currentPitch) < 0.5F;
+        if (alreadyAimed) return true;
 
-        return Math.abs(wrapDegrees(targetYaw - nextYaw)) < 0.01F
-                && Math.abs(targetPitch - nextPitch) < 0.01F;
+        // Rotate now, but never click in the same tick as a rotation change.
+        // The next client tick sends the updated look before the interaction packet.
+        client.player.setYRot(stepAngle(currentYaw, targetYaw, 35.0F));
+        client.player.setXRot(stepLinear(currentPitch, targetPitch, 25.0F));
+        return false;
     }
 
     private static float stepAngle(float current, float target, float maxStep) {
