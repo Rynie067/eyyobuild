@@ -1,53 +1,45 @@
 # EYYOBUILD
 
-EYYOBUILD is a Fabric client-side schematic/build assistant for Minecraft Java Edition 26.2.
+EYYOBUILD is a client-side schematic and manual build-assistance project for Minecraft Java 26.2.
 
-## Current status — 0.1.0-alpha
+## Current status — 0.1.1-alpha
 
-- Fabric 26.2 / Java 25 project bootstrap.
-- In-game EYYOBUILD screen, opened with a configurable key mapping.
-- Scans the game's `schematics/` directory for `.litematic` files.
-- Reads compressed Litematica NBT metadata and displays schematic dimensions, regions and palette counts.
-- Configurable key mappings appear in **Options → Controls → Key Binds**.
-
-This first repository commit is the foundation, not a finished automatic builder. It does not yet place blocks or connect to Litematica's live placement manager.
+- Fabric 26.2 / Java 25 project setup.
+- Exactly two configurable EYYOBUILD key mappings.
+- In-game schematic selection screen.
+- Scans the game's `schematics/` folder for `.litematic` files.
+- Reads compressed Litematica NBT metadata and displays schematic dimensions, regions and palette sizes.
+- A visible manual-assistance session can be started or paused from either the UI or its key.
 
 ## Controls
 
 | Action | Default key |
 |---|---|
-| Open EYYOBUILD | B |
-| Refresh schematic list | R |
-| Previous schematic | J |
-| Next schematic | K |
+| Open EYYOBUILD UI | B |
+| Start / stop manual-assistance session | H |
 
-All keys can be changed in Minecraft's Controls screen.
+Both keys can be changed in **Options → Controls → Key Binds → EYYOBUILD**. There are no separate refresh, previous, or next keybinds: those actions are all inside the UI.
 
-## Installing a schematic
+## Schematic setup
 
-1. Start Minecraft once with EYYOBUILD installed.
-2. Put your `.litematic` files in the game's `schematics/` folder.
-3. Press **B**, then use Refresh / Previous / Next.
+1. Launch Minecraft once with EYYOBUILD installed.
+2. Place your `.litematic` files into the game's `schematics/` folder.
+3. Press **B** to open the interface.
+4. Use Previous / Next / Refresh to select a schematic.
+5. Press **H** or the UI's Start button to toggle the manual-assistance session.
 
 ## Build
 
-Requirements: JDK 25 and Gradle 9.5.1 or newer.
+Requirements: JDK 25 and Gradle 9.5.1.
 
 ```bash
 gradle build
 ```
 
-The mod JAR is written to `build/libs/`.
+The mod JAR is written to `build/libs/`. GitHub Actions builds the project after pushes and uploads the JAR as a workflow artifact.
 
-## Planned work
+## Important feature boundary
 
-1. Parse all block-state palette entries and packed block-state indices from Litematica regions.
-2. Add a schematic placement preview and per-block target highlighting.
-3. Match required block states to inventory slots and show missing materials.
-4. Add manual step-by-step placement assistance.
-5. Add automatic placement only for single-player or explicitly authorized test worlds, with visible controls and no anti-cheat bypass or stealth behavior.
-6. Add compatibility with Litematica's currently active placement when its API/version can be verified.
+This alpha provides schematic discovery, metadata display, and a visible manual-assistance session state. It does **not** place blocks automatically yet, decode every region's packed block-state array for a placement preview, or integrate with Litematica's live placement manager. The H key does not run a macro.
 
-## Fair-play boundary
-
-EYYOBUILD is not designed to hide automation, bypass server anti-cheat, spoof player input, or evade server rules. Online-server use must follow that server's rules.
+EYYOBUILD is not designed to hide automation, bypass anti-cheat, spoof player input, or evade server rules. Future placement features must be tested only in single-player or explicitly authorized environments.

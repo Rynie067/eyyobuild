@@ -27,3 +27,11 @@ jobs:
 
       - name: Build mod
         run: gradle build --no-daemon
+
+      - name: Upload build JARs
+        uses: actions/upload-artifact@v4
+        with:
+          name: eyyobuild-mc26.2-${{ github.sha }}
+          path: build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 14
