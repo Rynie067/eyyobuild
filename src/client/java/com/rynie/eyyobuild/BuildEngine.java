@@ -114,12 +114,13 @@ public final class BuildEngine {
 
         SchematicBlock schematicBlock = blocks.get(cursor);
         BlockPos target = anchor.offset(schematicBlock.x(), schematicBlock.y(), schematicBlock.z());
-        Block expectedBlock = BuiltInRegistries.BLOCK.get(Identifier.parse(schematicBlock.blockId()));
-        if (expectedBlock == null) {
+        var blockReference = BuiltInRegistries.BLOCK.get(Identifier.parse(schematicBlock.blockId()));
+        if (blockReference.isEmpty()) {
             status = "Bilinmeyen blok: " + schematicBlock.blockId();
             active = false;
             return;
         }
+        Block expectedBlock = blockReference.get().value();
 
         BlockState existing = client.level.getBlockState(target);
         if (existing.getBlock() == expectedBlock) {
