@@ -27,9 +27,12 @@ final class BaritoneBuildBridge {
     private BaritoneBuildBridge() {}
 
     static synchronized boolean start(Minecraft client, SchematicSummary schematic) {
-        if (sessionOwned && isActive()) {
-            status = "Baritone zaten inşaat yapıyor.";
-            return false;
+        if (sessionOwned) {
+            if (isActive()) {
+                status = "Baritone zaten inşaat yapıyor.";
+                return false;
+            }
+            finish("Önceki Baritone görevi sona erdi.");
         }
         if (client == null || client.player == null || client.level == null) {
             status = "Önce bir dünyaya gir.";
@@ -59,7 +62,7 @@ final class BaritoneBuildBridge {
             pathing = baritone.getPathingBehavior();
             settings = BaritoneAPI.getSettings();
 
-            if (builder.isActive() || pathing.isPathing()) {
+            if (builder.isActive() || pathing.isPathing() || pathing.hasPath()) {
                 status = "Baritone başka bir görev yürütüyor. Önce o görevi durdur.";
                 clearReferences();
                 return false;
