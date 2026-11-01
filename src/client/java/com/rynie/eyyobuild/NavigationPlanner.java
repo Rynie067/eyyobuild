@@ -154,7 +154,7 @@ public final class NavigationPlanner {
         BlockState floorState = client.level.getBlockState(floor);
 
         if (!feetState.getFluidState().isEmpty() || !headState.getFluidState().isEmpty()
-                || floorState.getFluidState().isPresent()) {
+                || !floorState.getFluidState().isEmpty()) {
             return false;
         }
         if (isHazard(floorState, floor)) return false;
