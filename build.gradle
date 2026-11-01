@@ -21,10 +21,56 @@ loom {
     }
 }
 
+def baritoneVersion = "1.19.0"
+def baritoneJarName = "baritone-api-fabric-${baritoneVersion}.jar"
+def baritoneJarFile = layout.buildDirectory.file("third-party/${baritoneJarName}").get().asFile
+def baritoneJarUrl = "https://github.com/cabaletta/baritone/releases/download/v${baritoneVersion}/${baritoneJarName}"
+def baritoneJarSha256 = "eca6e2fdf43c6657fe9fea10a8f9a7572d78dc91ad389b998b808bd28fa5b5d1"
+
+def sha256Of = { File inputFile ->
+    def digest = java.security.MessageDigest.getInstance("SHA-256")
+    inputFile.withInputStream { input ->
+        byte[] buffer = new byte[8192]
+        int count
+        while ((count = input.read(buffer)) > 0) {
+            digest.update(buffer, 0, count)
+        }
+    }
+    digest.digest().collect { String.format("%02x", it & 0xff) }.join()
+}
+
+def downloadBaritone = tasks.register("downloadBaritone") {
+    outputs.file(baritoneJarFile)
+    doLast {
+        if (!baritoneJarFile.isFile() || sha256Of(baritoneJarFile) != baritoneJarSha256) {
+            baritoneJarFile.parentFile.mkdirs()
+            File temporaryFile = new File(baritoneJarFile.parentFile, baritoneJarName + ".download")
+            def connection = new URL(baritoneJarUrl).openConnection()
+            connection.connectTimeout = 20000
+            connection.readTimeout = 90000
+            connection.setRequestProperty("User-Agent", "EYYOBUILD-Gradle")
+            connection.getInputStream().withCloseable { input ->
+                temporaryFile.withOutputStream { output -> input.transferTo(output) }
+            }
+            String actualSha256 = sha256Of(temporaryFile)
+            if (actualSha256 != baritoneJarSha256) {
+                temporaryFile.delete()
+                throw new GradleException("Baritone JAR checksum mismatch: " + actualSha256)
+            }
+            java.nio.file.Files.move(
+                    temporaryFile.toPath(),
+                    baritoneJarFile.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
+        }
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    clientCompileOnly files(baritoneJarFile)
 }
 
 processResources {
@@ -41,6 +87,10 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = "UTF-8"
 }
 
+tasks.named("compileClientJava") {
+    dependsOn(downloadBaritone)
+}
+
 java {
     withSourcesJar()
     sourceCompatibility = JavaVersion.VERSION_25
@@ -48,7 +98,17 @@ java {
 }
 
 tasks.named("jar") {
+    dependsOn(downloadBaritone)
     from("LICENSE") {
         rename { "${it}_${project.base.archivesName.get()}" }
+    }
+    from(baritoneJarFile) {
+        into("META-INF/jars")
+    }
+    from("LICENSES/Baritone-LICENSE.txt") {
+        into("META-INF/licenses")
+    }
+    from("THIRD_PARTY_NOTICES.md") {
+        into("META-INF")
     }
 }
