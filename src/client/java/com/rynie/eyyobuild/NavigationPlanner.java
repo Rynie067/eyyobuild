@@ -141,7 +141,7 @@ public final class NavigationPlanner {
                 && headState.getCollisionShape(client.level, head).isEmpty()
                 && feetState.getFluidState().isEmpty()
                 && headState.getFluidState().isEmpty()
-                && !isHazard(feetState, floor)
+                && !isHazard(floorState, floor)
                 && !floorState.getCollisionShape(client.level, floor).isEmpty()
                 && floorState.getFluidState().isEmpty();
     }
