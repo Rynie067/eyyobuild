@@ -3,37 +3,36 @@ package com.rynie.eyyobuild;
 import com.rynie.eyyobuild.schematic.SchematicSummary;
 import net.minecraft.client.Minecraft;
 
-/** Public entry point for the visible schematic builder session. */
+/** EYYOBUILD session facade backed by Baritone's full builder/pathing process. */
 public final class BuilderSession {
     private BuilderSession() {}
 
     public static synchronized void toggle(Minecraft client, SchematicSummary schematic) {
-        if (BuildEngine.isActive()) {
-            BuildEngine.stop("İnşaat durduruldu.");
+        if (isActive()) {
+            stop();
         } else {
             start(client, schematic);
         }
     }
 
-    /** Starts explicitly; used by the UI so the button never toggles an active session off. */
     public static synchronized void start(Minecraft client, SchematicSummary schematic) {
-        if (BuildEngine.isActive()) return;
-        BuildEngine.start(client, schematic);
+        if (isActive()) return;
+        BaritoneBuildBridge.start(client, schematic);
     }
 
     public static synchronized boolean isActive() {
-        return BuildEngine.isActive();
+        return BaritoneBuildBridge.isActive();
     }
 
     public static synchronized void stop() {
-        BuildEngine.stop("İnşaat durduruldu.");
+        BaritoneBuildBridge.stop("İnşaat durduruldu.");
     }
 
     public static synchronized void tick(Minecraft client) {
-        BuildEngine.tick(client);
+        BaritoneBuildBridge.tick(client);
     }
 
     public static synchronized String status() {
-        return BuildEngine.status();
+        return BaritoneBuildBridge.status();
     }
 }
