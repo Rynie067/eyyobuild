@@ -511,7 +511,7 @@ public final class BuildEngine {
                 return false;
             }
 
-            if (!aimAt(client, Vec3.atCenter(obstruction))) {
+            if (!aimAt(client, centerOf(obstruction))) {
                 releaseAutomationInput(client);
                 status = "Yol üzerindeki engel için nişan alınıyor...";
                 return true;
