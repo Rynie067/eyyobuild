@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -29,7 +28,8 @@ public final class SecondaryClientLauncher {
     private static final Pattern VALID_NICKNAME = Pattern.compile("[A-Za-z0-9_]{3,16}");
     private static final Set<String> AUTH_ARGUMENTS = Set.of(
             "--username", "--uuid", "--accessToken", "--userType",
-            "--userProperties", "--clientId", "--xuid", "--gameDir"
+            "--userProperties", "--clientId", "--xuid", "--gameDir",
+            "--proxyHost", "--proxyPort", "--proxyUser", "--proxyPass"
     );
     private static final Set<String> CONNECTION_ARGUMENTS = Set.of(
             "--quickPlayPath", "--quickPlaySingleplayer", "--quickPlayMultiplayer",
@@ -43,6 +43,10 @@ public final class SecondaryClientLauncher {
     }
 
     public static LaunchResult launch(String rawNickname) {
+        return launch(rawNickname, ProxySettings.snapshot());
+    }
+
+    public static LaunchResult launch(String rawNickname, ProxySettings.Snapshot proxy) {
         String nickname = rawNickname == null ? "" : rawNickname.trim();
         if (!isValidNickname(nickname)) {
             return new LaunchResult(false, "Nick 3-16 karakter olmalı; yalnızca İngilizce harf, rakam ve _ kullan.");
@@ -67,18 +71,14 @@ public final class SecondaryClientLauncher {
                 return new LaunchResult(false, "Mevcut profilin mods klasörü bulunamadı: " + sourceMods);
             }
 
-            // Keep the same mod set. Hard links are used for JARs when the
-            // profile and secondary folder are on the same filesystem.
             synchronizeDirectory(sourceMods, secondaryGameDir.resolve("mods"), true, true, true);
 
             Path sourceConfig = FabricLoader.getInstance().getConfigDir();
             if (Files.isDirectory(sourceConfig)) {
-                // Copy config only on first launch so the secondary instance
-                // can keep its own options without fighting the first client.
                 synchronizeDirectory(sourceConfig, secondaryGameDir.resolve("config"), false, false, false);
             }
 
-            List<String> command = createCommand(nickname, secondaryGameDir);
+            List<String> command = createCommand(nickname, secondaryGameDir, proxy);
             Path logFile = secondaryGameDir.resolve("logs").resolve("eyyobuild-secondary.log");
             Files.createDirectories(logFile.getParent());
 
@@ -101,8 +101,12 @@ public final class SecondaryClientLauncher {
                 }
             });
 
+            String proxyLabel = proxy != null && proxy.enabled()
+                    ? " | SOCKS5 " + proxy.host() + ":" + proxy.port()
+                    : " | Proxy: yok";
             return new LaunchResult(true,
-                    "İkinci Minecraft başlatıldı: " + nickname + "  |  PID " + pid
+                    "İkinci Minecraft başlatıldı: " + nickname + proxyLabel
+                            + "  |  PID " + pid
                             + "  |  Günlük: eyyobuild-accounts/" + nickname + "/logs/");
         } catch (Exception exception) {
             String detail = exception.getMessage();
@@ -121,7 +125,9 @@ public final class SecondaryClientLauncher {
         }
     }
 
-    private static List<String> createCommand(String nickname, Path secondaryGameDir) throws IOException {
+    private static List<String> createCommand(
+            String nickname, Path secondaryGameDir, ProxySettings.Snapshot proxy
+    ) throws IOException {
         String mainCommand = System.getProperty("sun.java.command", "");
         List<String> mainTokens = splitCommandLine(mainCommand);
         if (mainTokens.isEmpty()) {
@@ -151,13 +157,11 @@ public final class SecondaryClientLauncher {
         List<String> command = new ArrayList<>();
         command.add(javaExecutable.toString());
 
-        // Reuse the exact JVM/module/native flags from this client, but give
-        // the extra client a bounded heap so two instances do not both reserve
-        // an unnecessarily large amount of memory.
         for (String argument : ManagementFactory.getRuntimeMXBean().getInputArguments()) {
             if (argument.startsWith("-Xms") || argument.startsWith("-Xmx")
                     || argument.startsWith("-XX:ErrorFile=")
-                    || argument.startsWith("-XX:HeapDumpPath=")) {
+                    || argument.startsWith("-XX:HeapDumpPath=")
+                    || isProxyJvmArgument(argument)) {
                 continue;
             }
             command.add(argument);
@@ -203,13 +207,26 @@ public final class SecondaryClientLauncher {
         command.add("--gameDir");
         command.add(secondaryGameDir.toAbsolutePath().toString());
 
+        if (proxy != null && proxy.enabled()) {
+            command.add("--proxyHost");
+            command.add(proxy.host());
+            command.add("--proxyPort");
+            command.add(Integer.toString(proxy.port()));
+        }
+
         return command;
     }
 
-    /**
-     * Parses the main-class/argument string reported by the JVM. Quoted paths
-     * are kept as single arguments, including Windows paths containing spaces.
-     */
+    private static boolean isProxyJvmArgument(String argument) {
+        String lower = argument.toLowerCase(Locale.ROOT);
+        return lower.startsWith("-dsocksproxyhost=")
+                || lower.startsWith("-dsocksproxyport=")
+                || lower.startsWith("-dhttp.proxyhost=")
+                || lower.startsWith("-dhttp.proxyport=")
+                || lower.startsWith("-dhttps.proxyhost=")
+                || lower.startsWith("-dhttps.proxyport=");
+    }
+
     private static List<String> splitCommandLine(String commandLine) {
         List<String> tokens = new ArrayList<>();
         StringBuilder current = new StringBuilder();
