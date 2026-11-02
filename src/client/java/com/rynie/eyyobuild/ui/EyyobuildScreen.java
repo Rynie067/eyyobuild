@@ -2,6 +2,7 @@ package com.rynie.eyyobuild.ui;
 
 import com.rynie.eyyobuild.BuildSettings;
 import com.rynie.eyyobuild.BuilderSession;
+import com.rynie.eyyobuild.SecondaryClientLauncher;
 import com.rynie.eyyobuild.schematic.SchematicCatalog;
 import com.rynie.eyyobuild.schematic.SchematicSummary;
 import net.fabricmc.loader.api.FabricLoader;
@@ -9,12 +10,18 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 public final class EyyobuildScreen extends Screen {
     private Button buildButton;
+    private Button secondaryLaunchButton;
+    private MultiLineEditBox secondaryNickInput;
+    private boolean secondaryLaunchInProgress;
+    private String launchStatus = "";
+    private boolean launchStatusSuccess;
 
     public EyyobuildScreen() {
         super(Component.literal("EYYOBUILD"));
@@ -61,6 +68,57 @@ public final class EyyobuildScreen extends Screen {
         this.addRenderableWidget(new BuildRateSlider(
                 (this.width - sliderWidth) / 2, this.height / 2 + 55, sliderWidth
         ));
+
+        int panelLeft = this.width / 2 - 250;
+        int accountRowY = this.height / 2 + 94;
+        this.secondaryNickInput = MultiLineEditBox.builder()
+                .setX(panelLeft + 20)
+                .setY(accountRowY)
+                .setPlaceholder(Component.literal("Örn. Oyuncu2"))
+                .setShowBackground(true)
+                .setShowDecorations(false)
+                .build(this.font, 196, 20, Component.literal("İkinci hesap nicki"));
+        this.secondaryNickInput.setCharacterLimit(16);
+        this.secondaryNickInput.setLineLimit(1);
+        this.secondaryNickInput.setValue(BuildSettings.getSecondaryAccountNickname());
+        this.addRenderableWidget(this.secondaryNickInput);
+
+        this.secondaryLaunchButton = this.addRenderableWidget(Button.builder(
+                Component.literal("İkinci Oyunu Başlat"),
+                button -> launchSecondaryClient()
+        ).bounds(panelLeft + 224, accountRowY, 256 - 20, 20).build());
+    }
+
+    private void launchSecondaryClient() {
+        if (secondaryLaunchInProgress || secondaryNickInput == null) return;
+
+        String nickname = secondaryNickInput.getValue().trim();
+        if (!SecondaryClientLauncher.isValidNickname(nickname)) {
+            launchStatus = "Nick 3-16 karakter olmalı (A-Z, 0-9, _).";
+            launchStatusSuccess = false;
+            return;
+        }
+
+        BuildSettings.setSecondaryAccountNickname(nickname);
+        BuildSettings.save();
+        secondaryLaunchInProgress = true;
+        launchStatus = "İkinci oyun hazırlanıyor...";
+        launchStatusSuccess = true;
+        if (secondaryLaunchButton != null) {
+            secondaryLaunchButton.setMessage(Component.literal("Hazırlanıyor..."));
+        }
+
+        Thread.ofVirtual().name("EYYOBUILD-secondary-client").start(() -> {
+            SecondaryClientLauncher.LaunchResult result = SecondaryClientLauncher.launch(nickname);
+            Minecraft.getInstance().execute(() -> {
+                launchStatus = result.message();
+                launchStatusSuccess = result.success();
+                secondaryLaunchInProgress = false;
+                if (secondaryLaunchButton != null) {
+                    secondaryLaunchButton.setMessage(Component.literal("İkinci Oyunu Başlat"));
+                }
+            });
+        });
     }
 
     private void updateBuildButton() {
@@ -121,16 +179,26 @@ public final class EyyobuildScreen extends Screen {
 
         graphics.text(this.font, "Yerleştirme hızı (blok koyma / kırma)",
                 left + 20, top + 211, 0xFFB8C1D1, false);
+        graphics.text(this.font, "İkinci istemci  /  offline nick (3-16 karakter)",
+                left + 20, top + 250, 0xFFB8C1D1, false);
 
         String buildState = BuilderSession.status();
         int stateColor = BuilderSession.isActive() ? 0xFF8FE3B0 : 0xFFFFC58A;
         graphics.text(this.font, "Durum: " + trim(buildState, 68), left + 20, bottom - 88, stateColor, true);
         graphics.text(this.font, "B: arayüz  |  H: oto inşaat + hareket aç/kapat",
                 left + 20, bottom - 68, 0xFFB8C1D1, false);
+
+        if (!launchStatus.isBlank()) {
+            int statusColor = launchStatusSuccess ? 0xFF8FE3B0 : 0xFFFF9A9A;
+            graphics.text(this.font, trim(launchStatus, 72), left + 20, bottom - 18, statusColor, false);
+        }
     }
 
     @Override
     public void removed() {
+        if (secondaryNickInput != null) {
+            BuildSettings.setSecondaryAccountNickname(secondaryNickInput.getValue().trim());
+        }
         BuildSettings.save();
         super.removed();
     }
