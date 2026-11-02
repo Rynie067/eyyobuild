@@ -1,5 +1,5 @@
 {
   "key.category.eyyobuild.main": "EYYOBUILD",
   "key.eyyobuild.open": "Open EYYOBUILD",
-  "key.eyyobuild.toggle_assistant": "Start / stop assistant"
+  "key.eyyobuild.toggle_build": "Start / stop automatic building"
 }
