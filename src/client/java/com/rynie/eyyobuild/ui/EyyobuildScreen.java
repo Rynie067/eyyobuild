@@ -85,7 +85,7 @@ public final class EyyobuildScreen extends Screen {
         this.addRenderableWidget(this.secondaryNickInput);
 
         this.addRenderableWidget(Button.builder(Component.literal("Proxy Değiştir"), button -> {
-            Minecraft.getInstance().setScreen(new EyyobuildProxyScreen(this));
+            Minecraft.getInstance().gui.setScreen(new EyyobuildProxyScreen(this));
         }).bounds(panelLeft + 176, accountRowY, 112, 20).build());
 
         this.secondaryLaunchButton = this.addRenderableWidget(Button.builder(
