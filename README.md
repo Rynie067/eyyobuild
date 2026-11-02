@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.9.1-alpha.1
+## Current status — 0.9.1-alpha.2
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -43,7 +43,7 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 
 The SOCKS5 test sends a CONNECT request to example.com on port 443. A successful test confirms the proxy accepted a SOCKS5 handshake and opened a TCP tunnel to that test destination; it does not guarantee a Minecraft server will accept the connection. Only unauthenticated SOCKS5 proxies are currently supported.
 
-The second client has its own saves, logs and per-user config folder. Its launch log is written to `eyyobuild-accounts/<nickname>/logs/eyyobuild-secondary.log`. The launcher starts a fresh Java process using the running client's Java runtime, JVM options, resolved main class and classpath, while copying the current game arguments and replacing the per-instance identity and game directory. It no longer requires the entry-point class name to literally contain `KnotClient`. The launch action waits up to 12 seconds: if the child exits during startup, the UI reports its exit code and the last log lines instead of claiming that Minecraft opened. A process that remains alive after the verification window is reported as running.
+The second client has its own saves, logs and per-user config folder. Its launch log is written to `eyyobuild-accounts/<nickname>/logs/eyyobuild-secondary.log`. The launcher starts a fresh Java process using the running client's Java runtime, JVM options and classpath. When the current game was started through Modrinth App's `com.modrinth.theseus.MinecraftLaunch` wrapper, EYYOBUILD extracts the actual Fabric entry-point class from the wrapper arguments and launches that class directly. This bypasses the wrapper's private Theseus RPC socket, which is available only to the original Modrinth App launch. It then copies the game arguments and replaces the per-instance identity and game directory. It no longer requires the entry-point class name to literally contain `KnotClient`. The launch action waits up to 12 seconds: if the child exits during startup, the UI reports its exit code and the last log lines instead of claiming that Minecraft opened. A process that remains alive after the verification window is reported as running.
 
 ## Public proxy list sources
 
