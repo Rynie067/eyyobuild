@@ -21,6 +21,7 @@ public final class BuildSettings {
     private static final int DEFAULT_ACTION_DELAY_TICKS = 19;
 
     private static int actionDelayTicks = DEFAULT_ACTION_DELAY_TICKS;
+    private static String secondaryAccountNickname = "";
     private static Path configFile;
     private static boolean loaded;
 
@@ -41,10 +42,15 @@ public final class BuildSettings {
                 actionDelayTicks = clamp(Integer.parseInt(savedDelay.trim()),
                         MIN_ACTION_DELAY_TICKS, MAX_ACTION_DELAY_TICKS);
             }
+            secondaryAccountNickname = properties.getProperty("secondaryAccountNickname", "").trim();
+            if (!SecondaryClientLauncher.isValidNickname(secondaryAccountNickname)) {
+                secondaryAccountNickname = "";
+            }
         } catch (IOException | NumberFormatException exception) {
-            System.err.println("[EYYOBUILD] Ayarlar okunamadı; varsayılan yerleştirme hızı kullanılacak: "
+            System.err.println("[EYYOBUILD] Ayarlar okunamadı; varsayılan değerler kullanılacak: "
                     + exception.getMessage());
             actionDelayTicks = DEFAULT_ACTION_DELAY_TICKS;
+            secondaryAccountNickname = "";
         }
     }
 
@@ -72,6 +78,15 @@ public final class BuildSettings {
         return "Hız: " + formatted + " blok/sn";
     }
 
+    public static synchronized String getSecondaryAccountNickname() {
+        return secondaryAccountNickname;
+    }
+
+    public static synchronized void setSecondaryAccountNickname(String nickname) {
+        secondaryAccountNickname = SecondaryClientLauncher.isValidNickname(nickname)
+                ? nickname.trim() : "";
+    }
+
     public static synchronized void save() {
         if (configFile == null) {
             configFile = FabricLoader.getInstance().getConfigDir().resolve("eyyobuild.properties");
@@ -79,6 +94,7 @@ public final class BuildSettings {
 
         Properties properties = new Properties();
         properties.setProperty("placementDelayTicks", Integer.toString(actionDelayTicks));
+        properties.setProperty("secondaryAccountNickname", secondaryAccountNickname);
         try {
             Files.createDirectories(configFile.getParent());
             try (OutputStream output = Files.newOutputStream(configFile)) {
