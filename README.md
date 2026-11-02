@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.6.0-alpha.1
+## Current status — 0.7.0-alpha.1
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -13,6 +13,10 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 - EYYOBUILD temporarily enables the automation settings needed for construction: breaking, placing, inventory handling, auto-tool, sprinting, parkour and the Baritone builder. Original Baritone settings are restored when the job ends or is stopped.
 - The EYYOBUILD speed slider controls Baritone's right-click and block-break delays. It is a pacing setting, not an anti-cheat bypass.
 - The UI shows whether Baritone is walking/building, planning the next action, or paused because it could not find a valid next move.
+- **New:** the B menu can start a second Minecraft client by nickname only. It reuses the current Fabric launch, Minecraft version, Java runtime, assets and installed mod JARs; it does not create a Modrinth launcher profile.
+- The second client uses an isolated per-nickname game directory under `eyyobuild-accounts/`. Mod JARs are hard-linked when possible (copied if the filesystem does not support hard links), and the current mod config is copied on first launch. Saves and logs remain separate to avoid two clients writing to the same world files.
+- Nickname-only accounts use Minecraft's offline identity. They work only on servers that allow offline-mode accounts; authenticated online-mode servers require a real Microsoft account and will reject them.
+- The second client is capped at up to 3 GB of Java heap to reduce memory pressure when two game windows are open. The first client is not changed.
 - **B** and **H** are the only EYYOBUILD key mappings; both can be rebound in Minecraft Controls.
 
 ## Setup
@@ -24,6 +28,15 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 5. Press **B** in EYYOBUILD and select the matching `.litematic` file.
 6. Keep building blocks and some common full-block materials (such as dirt, cobblestone, netherrack or stone) in the inventory for the schematic and any support/scaffolding the route requires.
 7. Click **Başlat** or press **H**. Click **Durdur** or press **H** again to stop.
+
+## Second Minecraft client
+
+1. Press **B** to open EYYOBUILD.
+2. Enter a nickname of 3–16 characters using A–Z, 0–9 or underscore.
+3. Click **İkinci Oyunu Başlat**. EYYOBUILD starts another Fabric client using the same installed mods and Minecraft version, but in a separate game folder.
+4. Join an offline-mode server from the second window. Nickname-only identities cannot authenticate to online-mode premium servers.
+
+The second client has its own saves, logs and per-user config folder. Its launch log is written to `eyyobuild-accounts/<nickname>/logs/eyyobuild-secondary.log`. If the current launcher does not expose a standard Fabric `KnotClient` command/classpath, EYYOBUILD reports that it cannot safely duplicate that launch instead of guessing a different profile.
 
 ## Controls
 
