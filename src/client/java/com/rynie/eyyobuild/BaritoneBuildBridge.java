@@ -235,10 +235,10 @@ final class BaritoneBuildBridge {
 
         Set<Block> available = new HashSet<>();
         if (client != null && client.player != null) {
-            var inventory = client.player.getInventory();
-            int slots = Math.min(36, inventory.items.size());
+            var inventoryItems = client.player.getInventory().getNonEquipmentItems();
+            int slots = Math.min(36, inventoryItems.size());
             for (int slot = 0; slot < slots; slot++) {
-                ItemStack stack = inventory.items.get(slot);
+                ItemStack stack = inventoryItems.get(slot);
                 if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
                     available.add(blockItem.getBlock());
                 }
