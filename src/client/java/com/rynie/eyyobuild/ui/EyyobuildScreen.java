@@ -84,14 +84,10 @@ public final class EyyobuildScreen extends Screen {
         this.secondaryNickInput.setValue(BuildSettings.getSecondaryAccountNickname());
         this.addRenderableWidget(this.secondaryNickInput);
 
-        this.addRenderableWidget(Button.builder(Component.literal("Proxy Değiştir"), button -> {
-            Minecraft.getInstance().gui.setScreen(new EyyobuildProxyScreen(this));
-        }).bounds(panelLeft + 176, accountRowY, 112, 20).build());
-
         this.secondaryLaunchButton = this.addRenderableWidget(Button.builder(
                 Component.literal("İkinci Oyunu Başlat"),
                 button -> launchSecondaryClient()
-        ).bounds(panelLeft + 294, accountRowY, 186, 20).build());
+        ).bounds(panelLeft + 224, accountRowY, 256, 20).build());
     }
 
     private void launchSecondaryClient() {
@@ -193,6 +189,8 @@ public final class EyyobuildScreen extends Screen {
         graphics.text(this.font, "Durum: " + trim(buildState, 68), left + 20, bottom - 88, stateColor, true);
         graphics.text(this.font, "B: arayüz  |  H: oto inşaat + hareket aç/kapat",
                 left + 20, bottom - 68, 0xFFB8C1D1, false);
+        graphics.text(this.font, "Proxy için Minecraft ana menüsündeki EYYOBUILD Proxy düğmesini kullan.",
+                left + 20, bottom - 48, 0xFFB8C1D1, false);
 
         if (!launchStatus.isBlank()) {
             int statusColor = launchStatusSuccess ? 0xFF8FE3B0 : 0xFFFF9A9A;
