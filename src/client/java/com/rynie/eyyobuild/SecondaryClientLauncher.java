@@ -27,7 +27,7 @@ import java.util.stream.Stream;
  */
 public final class SecondaryClientLauncher {
     private static final Pattern VALID_NICKNAME = Pattern.compile("[A-Za-z0-9_]{3,16}");
-    private static final Pattern JAVA_CLASS = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*(\\\\.[A-Za-z_$][A-Za-z0-9_$]*)+");
+    private static final Pattern JAVA_CLASS = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)+");
     private static final Set<String> AUTH_ARGUMENTS = Set.of(
             "--username", "--uuid", "--accessToken", "--userType",
             "--userProperties", "--clientId", "--xuid", "--gameDir",
