@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.7.0-alpha.1
+## Current status — 0.8.0-alpha.1
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -13,10 +13,13 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 - EYYOBUILD temporarily enables the automation settings needed for construction: breaking, placing, inventory handling, auto-tool, sprinting, parkour and the Baritone builder. Original Baritone settings are restored when the job ends or is stopped.
 - The EYYOBUILD speed slider controls Baritone's right-click and block-break delays. It is a pacing setting, not an anti-cheat bypass.
 - The UI shows whether Baritone is walking/building, planning the next action, or paused because it could not find a valid next move.
-- **New:** the B menu can start a second Minecraft client by nickname only. It reuses the current Fabric launch, Minecraft version, Java runtime, assets and installed mod JARs; it does not create a Modrinth launcher profile.
-- The second client uses an isolated per-nickname game directory under `eyyobuild-accounts/`. Mod JARs are hard-linked when possible (copied if the filesystem does not support hard links), and the current mod config is copied on first launch. Saves and logs remain separate to avoid two clients writing to the same world files.
-- Nickname-only accounts use Minecraft's offline identity. They work only on servers that allow offline-mode accounts; authenticated online-mode servers require a real Microsoft account and will reject them.
+- The **B** menu can start a second Minecraft client by nickname only. It reuses the current Fabric launch, Minecraft version, Java runtime, assets and installed mod JARs; it does not create a Modrinth launcher profile.
+- The second client uses an isolated per-nickname game directory under `eyyobuild-accounts/`. Mod JARs are hard-linked when possible (copied if the filesystem does not support hard links), and the current mod config is copied on first launch. Saves and logs remain separate.
+- Nickname-only accounts use Minecraft's offline identity. They work only on servers that allow offline-mode accounts; authenticated online-mode servers require a real Microsoft account.
 - The second client is capped at up to 3 GB of Java heap to reduce memory pressure when two game windows are open. The first client is not changed.
+- **New:** the second-client row has a **Proxy Değiştir** button. It accepts a SOCKS5 host and port, tests the SOCKS5 handshake and a CONNECT tunnel, and passes the selected proxy to the second Minecraft process only. The main client is unaffected.
+- Proxy settings are temporary in-memory settings: they are not saved to disk and reset when Minecraft closes. **Proxy Yok** clears the setting immediately.
+- EYYOBUILD does not scrape public proxy lists or silently rotate through unknown relays. Use a proxy endpoint from a provider you trust; public open proxies can observe or interfere with traffic.
 - **B** and **H** are the only EYYOBUILD key mappings; both can be rebound in Minecraft Controls.
 
 ## Setup
@@ -33,8 +36,12 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 
 1. Press **B** to open EYYOBUILD.
 2. Enter a nickname of 3–16 characters using A–Z, 0–9 or underscore.
-3. Click **İkinci Oyunu Başlat**. EYYOBUILD starts another Fabric client using the same installed mods and Minecraft version, but in a separate game folder.
-4. Join an offline-mode server from the second window. Nickname-only identities cannot authenticate to online-mode premium servers.
+3. Use **Proxy Değiştir** to enter a SOCKS5 proxy address and port, then click **Proxy Test Et**.
+4. Click **Kullan** to apply it to the next second-client launch, or **Proxy Yok** to use a direct connection.
+5. Click **İkinci Oyunu Başlat**. EYYOBUILD starts another Fabric client using the same installed mods and Minecraft version, but in a separate game folder.
+6. Join an offline-mode server from the second window. Nickname-only identities cannot authenticate to online-mode premium servers.
+
+The proxy test uses a SOCKS5 CONNECT request to `example.com:443`. A successful test verifies that the endpoint accepts SOCKS5 and can open a TCP tunnel; it does not guarantee that a specific game server will accept the connection. Only SOCKS5 without username/password authentication is currently supported.
 
 The second client has its own saves, logs and per-user config folder. Its launch log is written to `eyyobuild-accounts/<nickname>/logs/eyyobuild-secondary.log`. If the current launcher does not expose a standard Fabric `KnotClient` command/classpath, EYYOBUILD reports that it cannot safely duplicate that launch instead of guessing a different profile.
 
