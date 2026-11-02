@@ -64,16 +64,16 @@ public final class EyyobuildProxyScreen extends Screen {
                 testSuccess = false;
                 return;
             }
-            Minecraft.getInstance().setScreen(parent);
+            Minecraft.getInstance().gui.setScreen(parent);
         }).bounds(center - 40, this.height / 2 + 12, 82, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("Proxy Yok"), button -> {
             ProxySettings.clear();
-            Minecraft.getInstance().setScreen(parent);
+            Minecraft.getInstance().gui.setScreen(parent);
         }).bounds(center + 48, this.height / 2 + 12, 102, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("Geri"), button -> {
-            Minecraft.getInstance().setScreen(parent);
+            Minecraft.getInstance().gui.setScreen(parent);
         }).bounds(center - 44, this.height / 2 + 44, 88, 20).build());
     }
 
@@ -127,11 +127,11 @@ public final class EyyobuildProxyScreen extends Screen {
         graphics.text(this.font, "SOCKS5 host", left + 18, top + 66, 0xFFD5DCE8, false);
         graphics.text(this.font, "Port", left + 248, top + 66, 0xFFD5DCE8, false);
         graphics.text(this.font, "Proxy bilgisi bellekte tutulur; oyun yeniden açılınca sıfırlanır.",
-                left + 18, top + 112, 0xFF9BA8BC, false);
+                left + 18, top + 95, 0xFF9BA8BC, false);
 
         if (!testStatus.isBlank()) {
             int color = testSuccess ? 0xFF8FE3B0 : 0xFFFF9A9A;
-            graphics.text(this.font, trim(testStatus, 58), left + 18, top + 145, color, false);
+            graphics.text(this.font, trim(testStatus, 58), left + 18, top + 160, color, false);
         }
     }
 
