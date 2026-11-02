@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.9.0-alpha.1
+## Current status — 0.9.1-alpha.1
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -43,7 +43,7 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 
 The SOCKS5 test sends a CONNECT request to example.com on port 443. A successful test confirms the proxy accepted a SOCKS5 handshake and opened a TCP tunnel to that test destination; it does not guarantee a Minecraft server will accept the connection. Only unauthenticated SOCKS5 proxies are currently supported.
 
-The second client has its own saves, logs and per-user config folder. Its launch log is written to eyyobuild-accounts/<nickname>/logs/eyyobuild-secondary.log. The launcher clones the current Java process arguments rather than requiring the entry-point class name to literally contain KnotClient. If the launcher hides too much information to reconstruct the session, EYYOBUILD reports an error instead of silently launching an unrelated profile.
+The second client has its own saves, logs and per-user config folder. Its launch log is written to `eyyobuild-accounts/<nickname>/logs/eyyobuild-secondary.log`. The launcher starts a fresh Java process using the running client's Java runtime, JVM options, resolved main class and classpath, while copying the current game arguments and replacing the per-instance identity and game directory. It no longer requires the entry-point class name to literally contain `KnotClient`. The launch action waits up to 12 seconds: if the child exits during startup, the UI reports its exit code and the last log lines instead of claiming that Minecraft opened. A process that remains alive after the verification window is reported as running.
 
 ## Public proxy list sources
 
