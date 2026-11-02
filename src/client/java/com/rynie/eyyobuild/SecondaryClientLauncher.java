@@ -185,6 +185,25 @@ public final class SecondaryClientLauncher {
             }
         }
 
+        if ("com.modrinth.theseus.MinecraftLaunch".equals(mainClass)) {
+            if (gameArguments.isEmpty()) {
+                throw new IOException("Modrinth başlatıcısının aktardığı Fabric giriş sınıfı bulunamadı.");
+            }
+
+            String wrappedGameMainClass = gameArguments.remove(0);
+            if (!JAVA_CLASS.matcher(wrappedGameMainClass).matches()) {
+                throw new IOException("Modrinth içindeki Minecraft giriş sınıfı tanınamadı: "
+                        + wrappedGameMainClass);
+            }
+
+            // Modrinth's MinecraftLaunch wrapper starts by connecting to the
+            // Theseus desktop app over a private RPC socket, then invokes this
+            // real game main class after the launcher sends its "launch" event.
+            // That RPC socket belongs to the original launch only. Start Fabric
+            // directly in the child JVM instead of re-running the wrapper.
+            mainClass = wrappedGameMainClass;
+        }
+
         String classPath = System.getProperty("java.class.path", "").trim();
         if (classPath.isEmpty()) {
             throw new IOException("Çalışan Minecraft'ın Java classpath bilgisi boş.");
