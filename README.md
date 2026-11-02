@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.9.1-alpha.2
+## Current status — 0.10.0-alpha.1
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -10,7 +10,7 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 - EYYOBUILD checks that the selected Litematica placement belongs to the same `.litematic` file chosen in its UI, then passes that selected placement to Baritone's own builder process.
 - Baritone handles A* route planning and execution, obstacle mining, block placement, throwaway scaffolding/bridging, jumps, parkour movement, safe descents, automatic tool selection and moving inventory blocks to the hotbar, subject to Baritone settings and available materials.
 - Litematica's selected placement, its enabled subregions, offsets, rotation and mirror are read by Baritone's Litematica integration instead of being reimplemented in EYYOBUILD.
-- EYYOBUILD temporarily enables the automation settings needed for construction: breaking, placing, inventory handling, auto-tool, sprinting, parkour and the Baritone builder. Original Baritone settings are restored when the job ends or is stopped.
+- EYYOBUILD temporarily enables the automation settings needed for construction: breaking, placing, inventory handling, auto-tool, sprinting, parkour and the Baritone builder. It builds in one-block-high slices from bottom to top and skips only a slice where none of the remaining schematic blocks match any block in the player's inventory. This lets it place other available block types instead of stopping when one material runs out. Original Baritone settings are restored when the job ends or is stopped.
 - The EYYOBUILD speed slider controls Baritone's right-click and block-break delays. It is a pacing setting, not an anti-cheat bypass.
 - The UI shows whether Baritone is walking/building, planning the next action, or paused because it could not find a valid next move.
 - The **B** menu can start a second Minecraft client by nickname only. It reuses the current Fabric launch, Minecraft version, Java runtime, assets and installed mod JARs; it does not create a Modrinth launcher profile.
@@ -32,6 +32,7 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 5. Press **B** in EYYOBUILD and select the matching `.litematic` file.
 6. Keep building blocks and some common full-block materials (such as dirt, cobblestone, netherrack or stone) in the inventory for the schematic and any support/scaffolding the route requires.
 7. Click **Başlat** or press **H**. Click **Durdur** or press **H** again to stop.
+8. If a material runs out, EYYOBUILD continues with other block types available in the inventory. A one-block-high slice with no matching material is skipped so later slices can still be built. Blocks in skipped slices remain missing; add the required materials and start the build again to fill them. EYYOBUILD does not automatically create or collect missing building materials.
 
 ## Second Minecraft client
 
