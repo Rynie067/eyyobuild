@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -128,43 +129,85 @@ public final class SecondaryClientLauncher {
     private static List<String> createCommand(
             String nickname, Path secondaryGameDir, ProxySettings.Snapshot proxy
     ) throws IOException {
-        String mainCommand = System.getProperty("sun.java.command", "");
-        List<String> mainTokens = splitCommandLine(mainCommand);
-        if (mainTokens.isEmpty()) {
-            throw new IOException("Çalışan Minecraft'ın başlatma komutu okunamadı.");
-        }
-
-        String mainClass = mainTokens.remove(0);
-        if (!mainClass.contains("KnotClient")) {
-            throw new IOException("Bu başlatıcı Fabric KnotClient kullanmıyor; ikinci istemci güvenli şekilde çoğaltılamadı.");
-        }
-
-        String classPath = System.getProperty("java.class.path", "");
-        if (classPath.isBlank()) {
-            throw new IOException("Java classpath bilgisi boş; ikinci istemci oluşturulamadı.");
-        }
-
-        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
-        Path javaExecutable = Path.of(System.getProperty("java.home"), "bin",
-                windows ? "javaw.exe" : "java").toAbsolutePath();
-        if (!Files.isRegularFile(javaExecutable) && windows) {
-            javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java.exe").toAbsolutePath();
+        ProcessHandle.Info processInfo = ProcessHandle.current().info();
+        Path javaExecutable = processInfo.command()
+                .map(Path::of)
+                .orElseGet(() -> Path.of(System.getProperty("java.home"), "bin",
+                        isWindows() ? "javaw.exe" : "java"));
+        javaExecutable = javaExecutable.toAbsolutePath();
+        if (!Files.isRegularFile(javaExecutable) && isWindows()) {
+            Path consoleJava = Path.of(System.getProperty("java.home"), "bin", "java.exe").toAbsolutePath();
+            if (Files.isRegularFile(consoleJava)) javaExecutable = consoleJava;
         }
         if (!Files.isRegularFile(javaExecutable)) {
             throw new IOException("Java çalıştırılabilir dosyası bulunamadı: " + javaExecutable);
         }
 
+        List<String> originalArguments = new ArrayList<>(Arrays.asList(
+                processInfo.arguments().orElse(new String[0])
+        ));
+        originalArguments = expandArgumentFiles(originalArguments);
+
+        List<String> reportedCommand = splitCommandLine(System.getProperty("sun.java.command", ""));
+        int entryIndex = -1;
+        int entryLength = 1;
+
+        // Preserve jar/module launch modes when the launcher uses them.
+        for (int i = 0; i < originalArguments.size(); i++) {
+            String token = originalArguments.get(i);
+            if ((token.equals("-jar") || token.equals("-m") || token.equals("--module"))
+                    && i + 1 < originalArguments.size()) {
+                entryIndex = i;
+                entryLength = 2;
+                break;
+            }
+        }
+
+        if (entryIndex < 0 && !reportedCommand.isEmpty()) {
+            entryIndex = originalArguments.indexOf(reportedCommand.get(0));
+        }
+        if (entryIndex < 0) {
+            for (int i = 0; i < originalArguments.size(); i++) {
+                if (originalArguments.get(i).contains("KnotClient")) {
+                    entryIndex = i;
+                    break;
+                }
+            }
+        }
+        if (entryIndex < 0) {
+            for (int i = 0; i < originalArguments.size(); i++) {
+                if (JAVA_CLASS.matcher(originalArguments.get(i)).matches()) {
+                    entryIndex = i;
+                    break;
+                }
+            }
+        }
+
+        List<String> jvmArguments;
+        List<String> entryPoint;
+        List<String> gameArguments;
+
+        if (entryIndex >= 0) {
+            jvmArguments = new ArrayList<>(originalArguments.subList(0, entryIndex));
+            entryPoint = new ArrayList<>(originalArguments.subList(entryIndex, entryIndex + entryLength));
+            gameArguments = new ArrayList<>(originalArguments.subList(entryIndex + entryLength,
+                    originalArguments.size()));
+        } else {
+            // Fallback for JVM builds that hide ProcessHandle argument details.
+            List<String> commandTokens = splitCommandLine(System.getProperty("sun.java.command", ""));
+            String classPath = System.getProperty("java.class.path", "");
+            if (commandTokens.isEmpty() || classPath.isBlank()) {
+                throw new IOException("Launcher'ın Java komut satırı okunamadı; ikinci istemci güvenli şekilde başlatılamadı.");
+            }
+            jvmArguments = new ArrayList<>(List.of("-cp", classPath));
+            entryPoint = List.of(commandTokens.remove(0));
+            gameArguments = commandTokens;
+        }
+
         List<String> command = new ArrayList<>();
         command.add(javaExecutable.toString());
-
-        for (String argument : ManagementFactory.getRuntimeMXBean().getInputArguments()) {
-            if (argument.startsWith("-Xms") || argument.startsWith("-Xmx")
-                    || argument.startsWith("-XX:ErrorFile=")
-                    || argument.startsWith("-XX:HeapDumpPath=")
-                    || isProxyJvmArgument(argument)) {
-                continue;
-            }
-            command.add(argument);
+        for (String argument : jvmArguments) {
+            if (!isReplaceableJvmArgument(argument)) command.add(argument);
         }
 
         long currentHeapMb = Runtime.getRuntime().maxMemory() / (1024L * 1024L);
@@ -173,24 +216,8 @@ public final class SecondaryClientLauncher {
         command.add("-Xmx" + secondaryHeapMb + "M");
         command.add("-XX:ErrorFile=" + secondaryGameDir.resolve("hs_err_pid%p.log"));
         command.add("-XX:HeapDumpPath=" + secondaryGameDir.resolve("heapdump.hprof"));
-        command.add("-cp");
-        command.add(classPath);
-        command.add(mainClass);
-
-        List<String> gameArguments = new ArrayList<>();
-        for (int i = 0; i < mainTokens.size(); i++) {
-            String argument = mainTokens.get(i);
-            if (AUTH_ARGUMENTS.contains(argument) || CONNECTION_ARGUMENTS.contains(argument)) {
-                if (i + 1 < mainTokens.size() && !mainTokens.get(i + 1).startsWith("--")) i++;
-                continue;
-            }
-
-            gameArguments.add(argument);
-            if (i + 1 < mainTokens.size() && !mainTokens.get(i + 1).startsWith("--")) {
-                gameArguments.add(mainTokens.get(++i));
-            }
-        }
-        command.addAll(gameArguments);
+        command.addAll(entryPoint);
+        command.addAll(filterGameArguments(gameArguments));
 
         UUID offlineUuid = UUID.nameUUIDFromBytes(
                 ("OfflinePlayer:" + nickname).getBytes(StandardCharsets.UTF_8));
@@ -200,10 +227,6 @@ public final class SecondaryClientLauncher {
         command.add(offlineUuid.toString().replace("-", ""));
         command.add("--accessToken");
         command.add("0");
-        command.add("--userType");
-        command.add("legacy");
-        command.add("--userProperties");
-        command.add("{}");
         command.add("--gameDir");
         command.add(secondaryGameDir.toAbsolutePath().toString());
 
@@ -215,6 +238,55 @@ public final class SecondaryClientLauncher {
         }
 
         return command;
+    }
+
+    private static List<String> expandArgumentFiles(List<String> arguments) {
+        List<String> expanded = new ArrayList<>();
+        for (String argument : arguments) {
+            if (argument.startsWith("@") && argument.length() > 1) {
+                Path file = Path.of(argument.substring(1));
+                if (Files.isRegularFile(file)) {
+                    try {
+                        expanded.addAll(splitCommandLine(Files.readString(file)));
+                        continue;
+                    } catch (IOException ignored) {
+                        // The fallback below reports if the launch command cannot be reconstructed.
+                    }
+                }
+            }
+            expanded.add(argument);
+        }
+        return expanded;
+    }
+
+    private static List<String> filterGameArguments(List<String> arguments) {
+        List<String> filtered = new ArrayList<>();
+        for (int i = 0; i < arguments.size(); i++) {
+            String argument = arguments.get(i);
+            int equals = argument.indexOf('=');
+            String option = equals >= 0 ? argument.substring(0, equals) : argument;
+            if (AUTH_ARGUMENTS.contains(option) || CONNECTION_ARGUMENTS.contains(option)) {
+                if (equals < 0 && i + 1 < arguments.size() && !arguments.get(i + 1).startsWith("--")) {
+                    i++;
+                }
+                continue;
+            }
+            filtered.add(argument);
+        }
+        return filtered;
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    private static boolean isReplaceableJvmArgument(String argument) {
+        if (argument.startsWith("-Xms") || argument.startsWith("-Xmx")
+                || argument.startsWith("-XX:ErrorFile=")
+                || argument.startsWith("-XX:HeapDumpPath=")) {
+            return true;
+        }
+        return isProxyJvmArgument(argument);
     }
 
     private static boolean isProxyJvmArgument(String argument) {
