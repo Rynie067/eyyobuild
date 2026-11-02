@@ -18,10 +18,14 @@ public final class ProxySettings {
         return new Snapshot(enabled, host, port);
     }
 
+    public static boolean isValidHost(String rawHost) {
+        return rawHost != null && VALID_HOST.matcher(rawHost.trim()).matches();
+    }
+
     public static synchronized boolean apply(String rawHost, String rawPort) {
         String normalizedHost = rawHost == null ? "" : rawHost.trim();
         String normalizedPort = rawPort == null ? "" : rawPort.trim();
-        if (!VALID_HOST.matcher(normalizedHost).matches()) return false;
+        if (!isValidHost(normalizedHost)) return false;
 
         try {
             int parsedPort = Integer.parseInt(normalizedPort);
