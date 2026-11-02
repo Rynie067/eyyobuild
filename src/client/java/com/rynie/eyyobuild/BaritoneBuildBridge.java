@@ -151,7 +151,17 @@ final class BaritoneBuildBridge {
         settings.buildSchematicRotation.value = Rotation.NONE;
         settings.buildSchematicMirror.value = Mirror.NONE;
         settings.buildOnlySelection.value = false;
-        settings.buildInLayers.value = false;
+
+        // Keep construction moving when one material type runs out:
+        // build every currently placeable block in the active Y slice, and
+        // skip only a slice that has no matching block anywhere in inventory.
+        // One-block, bottom-up slices preserve support order as much as possible.
+        settings.buildInLayers.value = true;
+        settings.skipFailedLayers.value = true;
+        settings.layerHeight.value = 1;
+        settings.layerOrder.value = false;
+        settings.startAtLayer.value = 0;
+
         settings.mapArtMode.value = false;
         settings.buildRepeat.value = new Vec3i(0, 0, 0);
         settings.buildRepeatCount.value = 1;
@@ -223,6 +233,10 @@ final class BaritoneBuildBridge {
             Mirror mirror,
             boolean buildOnlySelection,
             boolean buildInLayers,
+            boolean skipFailedLayers,
+            int layerHeight,
+            boolean layerOrder,
+            int startAtLayer,
             boolean mapArtMode,
             Vec3i buildRepeat,
             int buildRepeatCount
@@ -246,6 +260,10 @@ final class BaritoneBuildBridge {
                     s.buildSchematicMirror.value,
                     s.buildOnlySelection.value,
                     s.buildInLayers.value,
+                    s.skipFailedLayers.value,
+                    s.layerHeight.value,
+                    s.layerOrder.value,
+                    s.startAtLayer.value,
                     s.mapArtMode.value,
                     s.buildRepeat.value,
                     s.buildRepeatCount.value
@@ -270,6 +288,10 @@ final class BaritoneBuildBridge {
             s.buildSchematicMirror.value = mirror;
             s.buildOnlySelection.value = buildOnlySelection;
             s.buildInLayers.value = buildInLayers;
+            s.skipFailedLayers.value = skipFailedLayers;
+            s.layerHeight.value = layerHeight;
+            s.layerOrder.value = layerOrder;
+            s.startAtLayer.value = startAtLayer;
             s.mapArtMode.value = mapArtMode;
             s.buildRepeat.value = buildRepeat;
             s.buildRepeatCount.value = buildRepeatCount;
