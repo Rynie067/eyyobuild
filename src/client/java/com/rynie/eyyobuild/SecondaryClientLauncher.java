@@ -271,25 +271,6 @@ public final class SecondaryClientLauncher {
         return filtered;
     }
 
-    private static boolean isReplaceableJvmArgument(String argument) {
-        if (argument.startsWith("-Xms") || argument.startsWith("-Xmx")
-                || argument.startsWith("-XX:ErrorFile=")
-                || argument.startsWith("-XX:HeapDumpPath=")) {
-            return true;
-        }
-        return isProxyJvmArgument(argument);
-    }
-
-    private static boolean isProxyJvmArgument(String argument) {
-        String lower = argument.toLowerCase(Locale.ROOT);
-        return lower.startsWith("-dsocksproxyhost=")
-                || lower.startsWith("-dsocksproxyport=")
-                || lower.startsWith("-dhttp.proxyhost=")
-                || lower.startsWith("-dhttp.proxyport=")
-                || lower.startsWith("-dhttps.proxyhost=")
-                || lower.startsWith("-dhttps.proxyport=");
-    }
-
     private static boolean isWindows() {
         return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
     }
