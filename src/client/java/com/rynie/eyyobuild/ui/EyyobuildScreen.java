@@ -2,6 +2,7 @@ package com.rynie.eyyobuild.ui;
 
 import com.rynie.eyyobuild.BuildSettings;
 import com.rynie.eyyobuild.BuilderSession;
+import com.rynie.eyyobuild.ProxySettings;
 import com.rynie.eyyobuild.SecondaryClientLauncher;
 import com.rynie.eyyobuild.schematic.SchematicCatalog;
 import com.rynie.eyyobuild.schematic.SchematicSummary;
@@ -77,16 +78,20 @@ public final class EyyobuildScreen extends Screen {
                 .setPlaceholder(Component.literal("Örn. Oyuncu2"))
                 .setShowBackground(true)
                 .setShowDecorations(false)
-                .build(this.font, 196, 20, Component.literal("İkinci hesap nicki"));
+                .build(this.font, 150, 20, Component.literal("İkinci hesap nicki"));
         this.secondaryNickInput.setCharacterLimit(16);
         this.secondaryNickInput.setLineLimit(1);
         this.secondaryNickInput.setValue(BuildSettings.getSecondaryAccountNickname());
         this.addRenderableWidget(this.secondaryNickInput);
 
+        this.addRenderableWidget(Button.builder(Component.literal("Proxy Değiştir"), button -> {
+            Minecraft.getInstance().setScreen(new EyyobuildProxyScreen(this));
+        }).bounds(panelLeft + 176, accountRowY, 112, 20).build());
+
         this.secondaryLaunchButton = this.addRenderableWidget(Button.builder(
                 Component.literal("İkinci Oyunu Başlat"),
                 button -> launchSecondaryClient()
-        ).bounds(panelLeft + 224, accountRowY, 256 - 20, 20).build());
+        ).bounds(panelLeft + 294, accountRowY, 186, 20).build());
     }
 
     private void launchSecondaryClient() {
@@ -101,6 +106,7 @@ public final class EyyobuildScreen extends Screen {
 
         BuildSettings.setSecondaryAccountNickname(nickname);
         BuildSettings.save();
+        ProxySettings.Snapshot proxy = ProxySettings.snapshot();
         secondaryLaunchInProgress = true;
         launchStatus = "İkinci oyun hazırlanıyor...";
         launchStatusSuccess = true;
@@ -109,7 +115,7 @@ public final class EyyobuildScreen extends Screen {
         }
 
         Thread.ofVirtual().name("EYYOBUILD-secondary-client").start(() -> {
-            SecondaryClientLauncher.LaunchResult result = SecondaryClientLauncher.launch(nickname);
+            SecondaryClientLauncher.LaunchResult result = SecondaryClientLauncher.launch(nickname, proxy);
             Minecraft.getInstance().execute(() -> {
                 launchStatus = result.message();
                 launchStatusSuccess = result.success();
