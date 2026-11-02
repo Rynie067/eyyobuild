@@ -30,7 +30,7 @@ public final class SecondaryClientLauncher {
     private static final Pattern JAVA_CLASS = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)+");
     private static final Set<String> AUTH_ARGUMENTS = Set.of(
             "--username", "--uuid", "--accessToken", "--userType",
-            "--userProperties", "--clientId", "--xuid", "--gameDir",
+            "--userProperties", "--profileProperties", "--clientId", "--xuid", "--gameDir",
             "--proxyHost", "--proxyPort", "--proxyUser", "--proxyPass"
     );
     private static final Set<String> CONNECTION_ARGUMENTS = Set.of(
@@ -73,6 +73,8 @@ public final class SecondaryClientLauncher {
                 return new LaunchResult(false, "Mevcut profilin mods klasörü bulunamadı: " + sourceMods);
             }
 
+            // Reuse precisely the current profile's mods and preserve the child's
+            // own saves/config/game directory.
             synchronizeDirectory(sourceMods, secondaryGameDir.resolve("mods"), true, true, true);
 
             Path sourceConfig = FabricLoader.getInstance().getConfigDir();
@@ -83,9 +85,10 @@ public final class SecondaryClientLauncher {
             List<String> command = createCommand(nickname, secondaryGameDir, proxy);
             Path logFile = secondaryGameDir.resolve("logs").resolve("eyyobuild-secondary.log");
             Files.createDirectories(logFile.getParent());
+            Files.deleteIfExists(logFile);
 
             Process process = new ProcessBuilder(command)
-                    .directory(Path.of(System.getProperty("user.dir")).toAbsolutePath().toFile())
+                    .directory(currentGameDir.toFile())
                     .redirectErrorStream(true)
                     .redirectOutput(logFile.toFile())
                     .start();
@@ -103,17 +106,43 @@ public final class SecondaryClientLauncher {
                 }
             });
 
+            // Do not claim that Minecraft started merely because Windows created
+            // a javaw process. Wait briefly and surface the child's actual log
+            // when the JVM exits during startup.
+            if (process.waitFor(12, java.util.concurrent.TimeUnit.SECONDS)) {
+                int exitCode = process.exitValue();
+                String diagnostic = readLogTail(logFile, 9);
+                return new LaunchResult(false,
+                        "İkinci Minecraft açılırken kapandı (çıkış kodu " + exitCode + "). "
+                                + diagnostic + " Log: " + logFile);
+            }
+
             String proxyLabel = proxy != null && proxy.enabled()
                     ? " | SOCKS5 " + proxy.host() + ":" + proxy.port()
                     : " | Proxy: yok";
             return new LaunchResult(true,
-                    "İkinci Minecraft başlatıldı: " + nickname + proxyLabel
-                            + "  |  PID " + pid
-                            + "  |  Günlük: eyyobuild-accounts/" + nickname + "/logs/");
+                    "İkinci Minecraft süreci çalışıyor: " + nickname + proxyLabel
+                            + " | PID " + pid + " | Log: " + logFile);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return new LaunchResult(false, "İkinci Minecraft başlatma kontrolü kesildi.");
         } catch (Exception exception) {
             String detail = exception.getMessage();
             if (detail == null || detail.isBlank()) detail = exception.getClass().getSimpleName();
             return new LaunchResult(false, "İkinci oyun başlatılamadı: " + detail);
+        }
+    }
+
+    private static String readLogTail(Path logFile, int maxLines) {
+        try {
+            if (!Files.isRegularFile(logFile)) return "Minecraft log dosyası oluşturulmadı.";
+            List<String> lines = Files.readAllLines(logFile, StandardCharsets.UTF_8);
+            int start = Math.max(0, lines.size() - maxLines);
+            String tail = String.join(" | ", lines.subList(start, lines.size()));
+            if (tail.length() > 650) tail = tail.substring(tail.length() - 650);
+            return tail.isBlank() ? "Minecraft logu boş." : "Hata: " + tail;
+        } catch (IOException exception) {
+            return "Log okunamadı: " + exception.getMessage();
         }
     }
 
@@ -130,85 +159,62 @@ public final class SecondaryClientLauncher {
     private static List<String> createCommand(
             String nickname, Path secondaryGameDir, ProxySettings.Snapshot proxy
     ) throws IOException {
-        ProcessHandle.Info processInfo = ProcessHandle.current().info();
-        Path javaExecutable = processInfo.command()
+        String reportedCommand = System.getProperty("sun.java.command", "").trim();
+        List<String> reportedTokens = splitCommandLine(reportedCommand);
+        if (reportedTokens.isEmpty()) {
+            throw new IOException("Minecraft ana sınıfı okunamadı (sun.java.command boş).");
+        }
+
+        // sun.java.command is the JVM's resolved main class plus Minecraft
+        // game arguments. ProcessHandle arguments are preferred for the exact
+        // token boundaries; this string remains the fallback for launchers
+        // using temporary Java argument files.
+        String mainClass = reportedTokens.get(0);
+        if (!JAVA_CLASS.matcher(mainClass).matches()) {
+            throw new IOException("Minecraft ana sınıfı tanınamadı: " + mainClass);
+        }
+
+        List<String> gameArguments = new ArrayList<>(reportedTokens.subList(1, reportedTokens.size()));
+        ProcessHandle.Info info = ProcessHandle.current().info();
+        String[] originalArgs = info.arguments().orElse(new String[0]);
+        for (int i = 0; i < originalArgs.length; i++) {
+            if (mainClass.equals(originalArgs[i])) {
+                gameArguments = new ArrayList<>(java.util.Arrays.asList(
+                        originalArgs).subList(i + 1, originalArgs.length));
+                break;
+            }
+        }
+
+        String classPath = System.getProperty("java.class.path", "").trim();
+        if (classPath.isEmpty()) {
+            throw new IOException("Çalışan Minecraft'ın Java classpath bilgisi boş.");
+        }
+
+        Path javaExecutable = info.command()
                 .map(Path::of)
                 .orElseGet(() -> Path.of(System.getProperty("java.home"), "bin",
                         isWindows() ? "javaw.exe" : "java"));
         javaExecutable = javaExecutable.toAbsolutePath();
         if (!Files.isRegularFile(javaExecutable) && isWindows()) {
-            Path consoleJava = Path.of(System.getProperty("java.home"), "bin", "java.exe").toAbsolutePath();
-            if (Files.isRegularFile(consoleJava)) javaExecutable = consoleJava;
+            Path javaw = Path.of(System.getProperty("java.home"), "bin", "javaw.exe").toAbsolutePath();
+            Path java = Path.of(System.getProperty("java.home"), "bin", "java.exe").toAbsolutePath();
+            if (Files.isRegularFile(javaw)) javaExecutable = javaw;
+            else if (Files.isRegularFile(java)) javaExecutable = java;
         }
         if (!Files.isRegularFile(javaExecutable)) {
             throw new IOException("Java çalıştırılabilir dosyası bulunamadı: " + javaExecutable);
         }
 
-        List<String> originalArguments = new ArrayList<>(Arrays.asList(
-                processInfo.arguments().orElse(new String[0])
-        ));
-        originalArguments = expandArgumentFiles(originalArguments);
-
-        List<String> reportedCommand = splitCommandLine(System.getProperty("sun.java.command", ""));
-        int entryIndex = -1;
-        int entryLength = 1;
-
-        // Preserve jar/module launch modes when the launcher uses them.
-        for (int i = 0; i < originalArguments.size(); i++) {
-            String token = originalArguments.get(i);
-            if ((token.equals("-jar") || token.equals("-m") || token.equals("--module"))
-                    && i + 1 < originalArguments.size()) {
-                entryIndex = i;
-                entryLength = 2;
-                break;
-            }
-        }
-
-        if (entryIndex < 0 && !reportedCommand.isEmpty()) {
-            entryIndex = originalArguments.indexOf(reportedCommand.get(0));
-        }
-        if (entryIndex < 0) {
-            for (int i = 0; i < originalArguments.size(); i++) {
-                if (originalArguments.get(i).contains("KnotClient")) {
-                    entryIndex = i;
-                    break;
-                }
-            }
-        }
-        if (entryIndex < 0) {
-            for (int i = 0; i < originalArguments.size(); i++) {
-                if (JAVA_CLASS.matcher(originalArguments.get(i)).matches()) {
-                    entryIndex = i;
-                    break;
-                }
-            }
-        }
-
-        List<String> jvmArguments;
-        List<String> entryPoint;
-        List<String> gameArguments;
-
-        if (entryIndex >= 0) {
-            jvmArguments = new ArrayList<>(originalArguments.subList(0, entryIndex));
-            entryPoint = new ArrayList<>(originalArguments.subList(entryIndex, entryIndex + entryLength));
-            gameArguments = new ArrayList<>(originalArguments.subList(entryIndex + entryLength,
-                    originalArguments.size()));
-        } else {
-            // Fallback for JVM builds that hide ProcessHandle argument details.
-            List<String> commandTokens = splitCommandLine(System.getProperty("sun.java.command", ""));
-            String classPath = System.getProperty("java.class.path", "");
-            if (commandTokens.isEmpty() || classPath.isBlank()) {
-                throw new IOException("Launcher'ın Java komut satırı okunamadı; ikinci istemci güvenli şekilde başlatılamadı.");
-            }
-            jvmArguments = new ArrayList<>(List.of("-cp", classPath));
-            entryPoint = List.of(commandTokens.remove(0));
-            gameArguments = commandTokens;
-        }
-
         List<String> command = new ArrayList<>();
         command.add(javaExecutable.toString());
-        for (String argument : jvmArguments) {
-            if (!isReplaceableJvmArgument(argument)) command.add(argument);
+
+        // RuntimeMXBean returns the JVM options already parsed by Java. This
+        // avoids depending on Modrinth's command-line/argfile layout, while
+        // java.class.path supplies the exact classpath used by this instance.
+        for (String argument : java.lang.management.ManagementFactory
+                .getRuntimeMXBean().getInputArguments()) {
+            if (isReplaceableJvmArgument(argument)) continue;
+            command.add(argument);
         }
 
         long currentHeapMb = Runtime.getRuntime().maxMemory() / (1024L * 1024L);
@@ -217,7 +223,9 @@ public final class SecondaryClientLauncher {
         command.add("-Xmx" + secondaryHeapMb + "M");
         command.add("-XX:ErrorFile=" + secondaryGameDir.resolve("hs_err_pid%p.log"));
         command.add("-XX:HeapDumpPath=" + secondaryGameDir.resolve("heapdump.hprof"));
-        command.addAll(entryPoint);
+        command.add("-cp");
+        command.add(classPath);
+        command.add(mainClass);
         command.addAll(filterGameArguments(gameArguments));
 
         UUID offlineUuid = UUID.nameUUIDFromBytes(
@@ -228,6 +236,10 @@ public final class SecondaryClientLauncher {
         command.add(offlineUuid.toString().replace("-", ""));
         command.add("--accessToken");
         command.add("0");
+        command.add("--userType");
+        command.add("legacy");
+        command.add("--userProperties");
+        command.add("{}");
         command.add("--gameDir");
         command.add(secondaryGameDir.toAbsolutePath().toString());
 
@@ -241,25 +253,6 @@ public final class SecondaryClientLauncher {
         return command;
     }
 
-    private static List<String> expandArgumentFiles(List<String> arguments) {
-        List<String> expanded = new ArrayList<>();
-        for (String argument : arguments) {
-            if (argument.startsWith("@") && argument.length() > 1) {
-                Path file = Path.of(argument.substring(1));
-                if (Files.isRegularFile(file)) {
-                    try {
-                        expanded.addAll(splitCommandLine(Files.readString(file)));
-                        continue;
-                    } catch (IOException ignored) {
-                        // The fallback below reports if the launch command cannot be reconstructed.
-                    }
-                }
-            }
-            expanded.add(argument);
-        }
-        return expanded;
-    }
-
     private static List<String> filterGameArguments(List<String> arguments) {
         List<String> filtered = new ArrayList<>();
         for (int i = 0; i < arguments.size(); i++) {
@@ -267,7 +260,8 @@ public final class SecondaryClientLauncher {
             int equals = argument.indexOf('=');
             String option = equals >= 0 ? argument.substring(0, equals) : argument;
             if (AUTH_ARGUMENTS.contains(option) || CONNECTION_ARGUMENTS.contains(option)) {
-                if (equals < 0 && i + 1 < arguments.size() && !arguments.get(i + 1).startsWith("--")) {
+                if (equals < 0 && i + 1 < arguments.size()
+                        && !arguments.get(i + 1).startsWith("--")) {
                     i++;
                 }
                 continue;
@@ -275,6 +269,25 @@ public final class SecondaryClientLauncher {
             filtered.add(argument);
         }
         return filtered;
+    }
+
+    private static boolean isReplaceableJvmArgument(String argument) {
+        if (argument.startsWith("-Xms") || argument.startsWith("-Xmx")
+                || argument.startsWith("-XX:ErrorFile=")
+                || argument.startsWith("-XX:HeapDumpPath=")) {
+            return true;
+        }
+        return isProxyJvmArgument(argument);
+    }
+
+    private static boolean isProxyJvmArgument(String argument) {
+        String lower = argument.toLowerCase(Locale.ROOT);
+        return lower.startsWith("-dsocksproxyhost=")
+                || lower.startsWith("-dsocksproxyport=")
+                || lower.startsWith("-dhttp.proxyhost=")
+                || lower.startsWith("-dhttp.proxyport=")
+                || lower.startsWith("-dhttps.proxyhost=")
+                || lower.startsWith("-dhttps.proxyport=");
     }
 
     private static boolean isWindows() {
