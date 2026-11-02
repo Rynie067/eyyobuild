@@ -5,11 +5,24 @@ import baritone.api.IBaritone;
 import baritone.api.Settings;
 import baritone.api.behavior.IPathingBehavior;
 import baritone.api.process.IBuilderProcess;
+import com.rynie.eyyobuild.schematic.SchematicBlock;
 import com.rynie.eyyobuild.schematic.SchematicSummary;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.Vec3i;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * EYYOBUILD's adapter to the official Baritone 26.2 builder/pathing engine.
@@ -22,6 +35,9 @@ final class BaritoneBuildBridge {
     private static Settings settings;
     private static SettingsSnapshot previousSettings;
     private static boolean sessionOwned;
+    private static Set<Block> schematicBlockTypes = Set.of();
+    private static Set<Block> unavailableBlockTypes = Set.of();
+    private static int inventoryRefreshTicks;
     private static String status = "Hazır";
 
     private BaritoneBuildBridge() {}
@@ -69,6 +85,21 @@ final class BaritoneBuildBridge {
             }
 
             previousSettings = SettingsSnapshot.capture(settings);
+            schematicBlockTypes = resolveSchematicBlockTypes(schematic);
+            if (schematicBlockTypes.isEmpty()) {
+                restoreSettings();
+                clearReferences();
+                status = "Şemadaki blok türleri oyun kayıt defterinden çözümlenemedi.";
+                return false;
+            }
+
+            refreshUnavailableMaterials(client, true);
+            if (unavailableBlockTypes.size() >= schematicBlockTypes.size()) {
+                restoreSettings();
+                clearReferences();
+                status = "Envanterinde şemaya ait yerleştirilebilir blok yok. Birkaç gerekli blok alıp yeniden başlat.";
+                return false;
+            }
             applyAutomationSettings();
 
             // Baritone reads the selected, already-transformed Litematica placement.
@@ -106,14 +137,21 @@ final class BaritoneBuildBridge {
             return;
         }
 
+        refreshUnavailableMaterials(client, false);
         applyActionSpeed();
 
+        String materialStatus = unavailableBlockTypes.isEmpty()
+                ? ""
+                : " | " + unavailableBlockTypes.size() + " blok türü envanterde yok, atlandı";
+
         if (builder.isPaused()) {
-            status = "Baritone durakladı: şu an güvenli bir sonraki hareket bulamadı.";
+            status = "Baritone beklemede: rota/yerleştirme yeniden deneniyor" + materialStatus;
         } else if (pathing != null && pathing.isPathing()) {
-            status = "Baritone rota üzerinde ilerliyor ve şemayı inşa ediyor.";
+            status = "Envanterdeki uygun bloklara rota üzerinde ilerliyor" + materialStatus;
+        } else if (pathing != null && pathing.hasPath()) {
+            status = "Uygun blok hedefi için rota hazır" + materialStatus;
         } else {
-            status = "Baritone şemayı tarıyor ve sonraki hareketi hesaplıyor.";
+            status = "Eksik blok türleri atlandı; envanterdeki diğer bloklar aranıyor" + materialStatus;
         }
     }
 
@@ -152,21 +190,67 @@ final class BaritoneBuildBridge {
         settings.buildSchematicMirror.value = Mirror.NONE;
         settings.buildOnlySelection.value = false;
 
-        // Keep construction moving when one material type runs out:
-        // build every currently placeable block in the active Y slice, and
-        // skip only a slice that has no matching block anywhere in inventory.
-        // One-block, bottom-up slices preserve support order as much as possible.
-        settings.buildInLayers.value = true;
-        settings.skipFailedLayers.value = true;
-        settings.layerHeight.value = 1;
-        settings.layerOrder.value = false;
-        settings.startAtLayer.value = 0;
+        // Missing block types are filtered from the complete schematic instead
+        // of forcing the builder to finish one Y layer before targeting another.
+        // This lets Baritone path to any remaining placeable block in the whole
+        // selected placement, even when the nearest position needs an unavailable
+        // material. The filter is refreshed from the live inventory during build.
+        settings.buildInLayers.value = false;
+        settings.skipFailedLayers.value = false;
+        settings.buildSkipBlocks.value = new ArrayList<>(unavailableBlockTypes);
 
         settings.mapArtMode.value = false;
         settings.buildRepeat.value = new Vec3i(0, 0, 0);
         settings.buildRepeatCount.value = 1;
 
         applyActionSpeed();
+    }
+
+    private static Set<Block> resolveSchematicBlockTypes(SchematicSummary schematic) {
+        Set<Block> result = new LinkedHashSet<>();
+        for (SchematicBlock block : schematic.blocks()) {
+            String rawId = block.blockId();
+            if (rawId == null || rawId.isBlank()) continue;
+
+            int separator = rawId.indexOf(':');
+            String namespace = separator >= 0 ? rawId.substring(0, separator) : "minecraft";
+            String path = separator >= 0 ? rawId.substring(separator + 1) : rawId;
+            try {
+                Identifier id = Identifier.fromNamespaceAndPath(namespace, path);
+                Block resolved = BuiltInRegistries.BLOCK.getValue(id);
+                if (resolved != null && resolved != Blocks.AIR) {
+                    result.add(resolved);
+                }
+            } catch (RuntimeException ignored) {
+                // Invalid/unknown palette identifiers cannot be placed by this client.
+            }
+        }
+        return Set.copyOf(result);
+    }
+
+    private static void refreshUnavailableMaterials(Minecraft client, boolean force) {
+        if (settings == null || schematicBlockTypes.isEmpty()) return;
+        if (!force && ++inventoryRefreshTicks < 10) return;
+        inventoryRefreshTicks = 0;
+
+        Set<Block> available = new HashSet<>();
+        if (client != null && client.player != null) {
+            var inventory = client.player.getInventory();
+            int slots = Math.min(36, inventory.items.size());
+            for (int slot = 0; slot < slots; slot++) {
+                ItemStack stack = inventory.items.get(slot);
+                if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
+                    available.add(blockItem.getBlock());
+                }
+            }
+        }
+
+        Set<Block> unavailable = new LinkedHashSet<>(schematicBlockTypes);
+        unavailable.removeAll(available);
+        if (!unavailable.equals(unavailableBlockTypes)) {
+            unavailableBlockTypes = Set.copyOf(unavailable);
+            settings.buildSkipBlocks.value = new ArrayList<>(unavailableBlockTypes);
+        }
     }
 
     private static void applyActionSpeed() {
@@ -206,6 +290,9 @@ final class BaritoneBuildBridge {
         pathing = null;
         baritone = null;
         settings = null;
+        schematicBlockTypes = Set.of();
+        unavailableBlockTypes = Set.of();
+        inventoryRefreshTicks = 0;
     }
 
     private static String safeMessage(Throwable exception) {
@@ -237,6 +324,7 @@ final class BaritoneBuildBridge {
             int layerHeight,
             boolean layerOrder,
             int startAtLayer,
+            List<Block> buildSkipBlocks,
             boolean mapArtMode,
             Vec3i buildRepeat,
             int buildRepeatCount
@@ -264,6 +352,7 @@ final class BaritoneBuildBridge {
                     s.layerHeight.value,
                     s.layerOrder.value,
                     s.startAtLayer.value,
+                    List.copyOf(s.buildSkipBlocks.value),
                     s.mapArtMode.value,
                     s.buildRepeat.value,
                     s.buildRepeatCount.value
@@ -292,6 +381,7 @@ final class BaritoneBuildBridge {
             s.layerHeight.value = layerHeight;
             s.layerOrder.value = layerOrder;
             s.startAtLayer.value = startAtLayer;
+            s.buildSkipBlocks.value = new ArrayList<>(buildSkipBlocks);
             s.mapArtMode.value = mapArtMode;
             s.buildRepeat.value = buildRepeat;
             s.buildRepeatCount.value = buildRepeatCount;
