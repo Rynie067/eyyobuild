@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.13.0-alpha.1
+## Current status — 0.13.0-alpha.2
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -16,7 +16,7 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 - EYYOBUILD temporarily enables the automation settings needed for construction: breaking, placing, inventory handling, auto-tool, sprinting, parkour and the Baritone builder. Before building, it finds the schematic block types that exist in the player's inventory and temporarily tells Baritone to ignore unavailable types across the entire schematic. The inventory filter is refreshed every 10 ticks, so when one material stack runs out that block type is skipped and Baritone can path to other blocks of types still available, regardless of their Y layer. Newly acquired block types become eligible again while the build is running. Original Baritone settings are restored when the job ends or is stopped.
 - The Baritone builder automatically checks for required block materials in nearby placed chests, trapped chests, barrels and shulker boxes (24-block horizontal radius, 12-block vertical radius). It records each opened container's coordinates and observed contents for the current build session, walks to accessible containers, takes needed block-item stacks through normal container clicks, returns to the previous position and reloads the same Litematica placement so already-built positions stay complete.
 - Container contents are read only after the server actually opens the container menu. Locked/inaccessible containers, unreachable positions and full-inventory transfers are skipped; this does not bypass permissions or server-side container rules. Storage memory is session-only and is refreshed from live container menus, not treated as permanent truth.
-- The EYYOBUILD speed slider controls Baritone's right-click and block-break delays. It is a pacing setting, not an anti-cheat bypass.
+- The default action delay is **25 ticks** on a fresh config. Change it whenever needed with the speed slider; the slider value is saved locally. It controls Baritone's right-click and block-break delays, not an anti-cheat bypass.
 - The UI shows whether Baritone is walking/building, planning the next action, or paused because it could not find a valid next move.
 
 ## Setup

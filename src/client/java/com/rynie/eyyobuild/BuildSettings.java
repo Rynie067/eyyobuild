@@ -16,7 +16,7 @@ public final class BuildSettings {
     private static final double MAX_BLOCKS_PER_SECOND = 5.0D;
     private static final int MIN_ACTION_DELAY_TICKS = 3;
     private static final int MAX_ACTION_DELAY_TICKS = 199;
-    private static final int DEFAULT_ACTION_DELAY_TICKS = 19;
+    private static final int DEFAULT_ACTION_DELAY_TICKS = 25;
 
     private static int actionDelayTicks = DEFAULT_ACTION_DELAY_TICKS;
     private static Path configFile;
