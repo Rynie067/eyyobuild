@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.13.0-alpha.3
+## Current status — 0.13.0-alpha.4
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -18,7 +18,7 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 - When a still-needed material reaches a low inventory reserve, EYYOBUILD searches nearby loaded chunks for placed chests (including trapped chests), barrels and shulker boxes (24-block horizontal radius, 12-block vertical radius). It records opened-container coordinates and observed item counts for the current build session, walks to accessible containers, takes one stack's worth through ordinary container clicks, returns to the saved build position and resumes the same Litematica placement.
 - Material fetching is demand-driven: it aims to replenish a small reserve (up to one stack per block type), rather than trying to fit the whole schematic into the player's inventory. It can make additional supply trips as stacks run low. A QUICK_MOVE may transfer a full source stack, so a small amount of oversupply is possible.
 - Container contents are read only after the server actually opens the container menu. Locked/inaccessible containers, unreachable positions and full-inventory transfers are skipped; this does not bypass permissions or server-side container rules. Storage memory is session-only and is refreshed from live container menus, not treated as permanent truth.
-- The speed slider ranges from **1 to 25**. **25 is fastest** and maps to one game tick between Baritone block actions; 1 is slowest. The value is saved locally. Minecraft still runs on game ticks, so this is not a guarantee of 25 placed blocks per real-world second.
+- The speed slider ranges from **1 to 100**. **100 is fastest** and maps to one game tick between Baritone block actions; 1 is slowest. The value is saved locally. Existing 1–25 slider settings are migrated proportionally to the new scale. Minecraft still runs on game ticks, so 100 is not a guarantee of 100 placed blocks per real-world second.
 - The UI shows whether Baritone is walking/building, planning the next action, or paused because it could not find a valid next move.
 
 ## Setup

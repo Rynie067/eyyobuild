@@ -9,14 +9,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
-/**
- * Persistent client-side build speed setting.
- * Speed level 25 is fastest (one game tick between actions); level 1 is slowest.
- */
+/** Persistent client-side build speed setting (1..100; 100 is fastest). */
 public final class BuildSettings {
     private static final int MIN_SPEED_LEVEL = 1;
-    private static final int MAX_SPEED_LEVEL = 25;
-    private static final int DEFAULT_SPEED_LEVEL = 25;
+    private static final int MAX_SPEED_LEVEL = 100;
+    private static final int DEFAULT_SPEED_LEVEL = 100;
 
     private static int speedLevel = DEFAULT_SPEED_LEVEL;
     private static Path configFile;
@@ -35,18 +32,18 @@ public final class BuildSettings {
             properties.load(input);
             String savedLevel = properties.getProperty("speedLevel");
             if (savedLevel != null) {
-                speedLevel = clamp(Integer.parseInt(savedLevel.trim()), MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
+                // Migrate the previous 1..25 slider proportionally to the new 1..100 scale.
+                int oldLevel = Integer.parseInt(savedLevel.trim());
+                speedLevel = oldLevel <= 25
+                        ? clamp(oldLevel * 4, MIN_SPEED_LEVEL, MAX_SPEED_LEVEL)
+                        : clamp(oldLevel, MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
                 return;
             }
 
-            // Migrate settings from 0.12/0.13 alpha builds. Their default was 25
-            // delay ticks, so preserve the new max-speed default for that legacy value.
             String legacyDelay = properties.getProperty("placementDelayTicks");
             if (legacyDelay != null) {
                 int oldDelay = Integer.parseInt(legacyDelay.trim());
-                if (oldDelay != 25) {
-                    speedLevel = clamp(26 - oldDelay, MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
-                }
+                speedLevel = clamp(101 - oldDelay, MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
             }
         } catch (IOException | NumberFormatException exception) {
             System.err.println("[EYYOBUILD] Ayarlar okunamadı; varsayılan hız kullanılacak: "
@@ -57,7 +54,7 @@ public final class BuildSettings {
 
     /** Baritone's click/block-break delay, in game ticks. */
     public static synchronized int getActionDelayTicks() {
-        return 26 - speedLevel;
+        return 101 - speedLevel;
     }
 
     public static synchronized double getSliderValue() {
