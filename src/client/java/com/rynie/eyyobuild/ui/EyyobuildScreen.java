@@ -143,7 +143,7 @@ public final class EyyobuildScreen extends Screen {
             }
         }
 
-        graphics.text(this.font, "Yerleştirme hızı (blok koyma / kırma)",
+        graphics.text(this.font, "İşlem hızı (1 yavaş  -  25 en hızlı)",
                 left + 20, top + 236, 0xFFB8C1D1, false);
         String buildState = BuilderSession.status();
         int stateColor = BuilderSession.isActive() ? 0xFF8FE3B0 : 0xFFFFC58A;

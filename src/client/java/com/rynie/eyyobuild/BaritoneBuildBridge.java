@@ -8,6 +8,7 @@ import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalGetToBlock;
 import baritone.api.process.ICustomGoalProcess;
 import baritone.api.process.IBuilderProcess;
+import baritone.api.schematic.IStaticSchematic;
 import com.rynie.eyyobuild.schematic.SchematicBlock;
 import com.rynie.eyyobuild.schematic.SchematicSummary;
 import net.minecraft.client.Minecraft;
@@ -32,6 +33,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -75,6 +77,8 @@ final class BaritoneBuildBridge {
     private static int pendingTransferTicks;
     private static int activeMenuId = -1;
     private static int supplyCooldownTicks;
+    private static int remainingScanTicks;
+    private static boolean remainingScanAvailable;
     private static int placementIndex = -1;
     private static java.nio.file.Path selectedSchematicPath;
     private static Map<Block, Integer> requiredBlockCounts = Map.of();
@@ -86,6 +90,10 @@ final class BaritoneBuildBridge {
     private static final int STORAGE_RADIUS = 24;
     private static final int STORAGE_VERTICAL_RADIUS = 12;
     private static final int STORAGE_OPEN_TIMEOUT_TICKS = 40;
+    private static final int REMAINING_SCAN_INTERVAL_TICKS = 100;
+    private static final int LOW_MATERIAL_WATERMARK = 8;
+    private static final int MATERIAL_BATCH_LIMIT = 64;
+    private static final long MAX_PLACEMENT_SCAN_BLOCKS = 8_000_000L;
 
     private BaritoneBuildBridge() {}
 
@@ -122,7 +130,9 @@ final class BaritoneBuildBridge {
         storageMemory.clear();
         failedStoragePositions.clear();
         supplyCooldownTicks = 0;
-        requiredBlockCounts = resolveSchematicBlockCounts(schematic);
+        requiredBlockCounts = Map.of();
+        remainingScanTicks = 0;
+        remainingScanAvailable = false;
         selectedSchematicPath = schematic.path();
         placementIndex = placement.placementIndex();
 
@@ -139,6 +149,7 @@ final class BaritoneBuildBridge {
             }
 
             previousSettings = SettingsSnapshot.capture(settings);
+            remainingScanAvailable = refreshRemainingRequirements(client);
             schematicBlockTypes = resolveSchematicBlockTypes(schematic);
             if (schematicBlockTypes.isEmpty()) {
                 restoreSettings();
@@ -162,8 +173,10 @@ final class BaritoneBuildBridge {
 
             sessionOwned = true;
             status = "Baritone otomatik inşaatı başlattı.";
-            if (!getNeededBlockCounts(client).isEmpty()) {
+            if (remainingScanAvailable && !getNeededBlockCounts(client).isEmpty()) {
                 beginSupplyRun(client);
+            } else if (!remainingScanAvailable) {
+                status = "İnşaat başladı; Litematica kalan blok listesi okunamadı, otomatik depo araması kapalı.";
             }
             return true;
         } catch (LinkageError | RuntimeException exception) {
@@ -198,9 +211,14 @@ final class BaritoneBuildBridge {
 
         refreshUnavailableMaterials(client, false);
 
-        // Count-based shortages trigger a supply run before the builder skips the
-        // remaining positions of a material type.
-        if (supplyCooldownTicks == 0 && !getNeededBlockCounts(client).isEmpty()) {
+        if (++remainingScanTicks >= REMAINING_SCAN_INTERVAL_TICKS) {
+            remainingScanTicks = 0;
+            remainingScanAvailable = refreshRemainingRequirements(client);
+        }
+
+        // Refill only when a still-needed material reaches its low-water mark.
+        // This avoids filling the inventory with the entire schematic's total count.
+        if (remainingScanAvailable && supplyCooldownTicks == 0 && !getNeededBlockCounts(client).isEmpty()) {
             if (beginSupplyRun(client)) return;
         }
 
@@ -235,23 +253,62 @@ final class BaritoneBuildBridge {
         status = message;
     }
 
-    private static Map<Block, Integer> resolveSchematicBlockCounts(SchematicSummary schematic) {
-        Map<Block, Integer> result = new LinkedHashMap<>();
-        for (SchematicBlock entry : schematic.blocks()) {
-            String rawId = entry.blockId();
-            if (rawId == null || rawId.isBlank()) continue;
-            try {
-                Identifier id = Identifier.parse(rawId);
-                var blockReference = BuiltInRegistries.BLOCK.get(id);
-                if (blockReference.isEmpty()) continue;
-                Block block = blockReference.get().value();
-                if (block == Blocks.AIR || !(block.asItem() instanceof BlockItem)) continue;
-                result.merge(block, 1, Integer::sum);
-            } catch (RuntimeException ignored) {
-                // Unknown palette entries cannot be supplied as normal block items.
+    /**
+     * Ask Baritone's own Litematica bridge for the transformed, enabled-subregion
+     * schematic. Its origin already accounts for rotation, mirror and enabled
+     * subregion offsets, so the remaining-material scan matches the builder.
+     */
+    private static boolean refreshRemainingRequirements(Minecraft client) {
+        if (client == null || client.level == null || placementIndex < 0) return false;
+        try {
+            Class<?> helperClass = Class.forName("baritone.utils.schematic.litematica.LitematicaHelper");
+            Object pair = helperClass.getMethod("getSchematic", int.class).invoke(null, placementIndex);
+            if (pair == null) throw new IllegalStateException("Litematica şematik dönüşümü boş döndü.");
+
+            Object schematicValue = pair.getClass().getMethod("first").invoke(pair);
+            Object originValue = pair.getClass().getMethod("second").invoke(pair);
+            if (!(schematicValue instanceof IStaticSchematic transformed)
+                    || !(originValue instanceof Vec3i origin)) {
+                throw new IllegalStateException("Baritone dönüştürülmüş şematik verisi okunamadı.");
             }
+
+            int width = transformed.widthX();
+            int height = transformed.heightY();
+            int length = transformed.lengthZ();
+            long volume = (long) width * height * length;
+            if (width <= 0 || height <= 0 || length <= 0 || volume > MAX_PLACEMENT_SCAN_BLOCKS) {
+                throw new IllegalStateException("Etkin Litematica alanı güvenli tarama sınırını aşıyor.");
+            }
+
+            Map<Block, Integer> remaining = new LinkedHashMap<>();
+            for (int y = 0; y < height; y++) {
+                for (int z = 0; z < length; z++) {
+                    for (int x = 0; x < width; x++) {
+                        BlockState desired = transformed.getDirect(x, y, z);
+                        if (desired == null || desired.isAir()
+                                || !(desired.getBlock().asItem() instanceof BlockItem)) {
+                            continue;
+                        }
+
+                        BlockPos worldPos = new BlockPos(
+                                origin.getX() + x,
+                                origin.getY() + y,
+                                origin.getZ() + z
+                        );
+                        BlockState current = client.level.getBlockState(worldPos);
+                        if (!current.equals(desired)) {
+                            remaining.merge(desired.getBlock(), 1, Integer::sum);
+                        }
+                    }
+                }
+            }
+
+            requiredBlockCounts = Map.copyOf(remaining);
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+            status = "Kalan Litematica blokları taranamadı: " + safeMessage(exception);
+            return false;
         }
-        return Map.copyOf(result);
     }
 
     private static int countBlockInInventory(Minecraft client, Block block) {
@@ -268,11 +325,20 @@ final class BaritoneBuildBridge {
         return count;
     }
 
+    private static int targetStockFor(Block block, int remaining) {
+        int maxStack = Math.max(1, block.asItem().getDefaultMaxStackSize());
+        return Math.min(remaining, Math.min(maxStack, MATERIAL_BATCH_LIMIT));
+    }
+
     private static Map<Block, Integer> getNeededBlockCounts(Minecraft client) {
         Map<Block, Integer> needed = new LinkedHashMap<>();
         for (Map.Entry<Block, Integer> entry : requiredBlockCounts.entrySet()) {
-            int missing = entry.getValue() - countBlockInInventory(client, entry.getKey());
-            if (missing > 0) needed.put(entry.getKey(), missing);
+            int current = countBlockInInventory(client, entry.getKey());
+            int target = targetStockFor(entry.getKey(), entry.getValue());
+            int lowWatermark = Math.min(LOW_MATERIAL_WATERMARK, target);
+            if (current <= lowWatermark && current < target) {
+                needed.put(entry.getKey(), target - current);
+            }
         }
         return needed;
     }
@@ -482,7 +548,8 @@ final class BaritoneBuildBridge {
                 pendingTransferTicks = 0;
                 if (source != null && !source.getItem().isEmpty()
                         && transferredBlock != null
-                        && countBlockInInventory(client, transferredBlock) < requiredBlockCounts.getOrDefault(transferredBlock, 0)) {
+                        && countBlockInInventory(client, transferredBlock) < targetStockFor(
+                                transferredBlock, requiredBlockCounts.getOrDefault(transferredBlock, 0))) {
                     // The destination had room for only part of this stack; retry the remaining source.
                     transferSlotIndex = Math.max(0, source.index);
                 } else {
@@ -526,9 +593,10 @@ final class BaritoneBuildBridge {
         }
 
         Block block = blockItem.getBlock();
-        int required = requiredBlockCounts.getOrDefault(block, 0);
+        int remaining = requiredBlockCounts.getOrDefault(block, 0);
+        int target = targetStockFor(block, remaining);
         int current = countBlockInInventory(client, block);
-        if (required <= current) {
+        if (target <= current) {
             transferSlotIndex++;
             return;
         }
@@ -587,6 +655,8 @@ final class BaritoneBuildBridge {
                 return;
             }
             placementIndex = placement.placementIndex();
+            remainingScanAvailable = refreshRemainingRequirements(client);
+            remainingScanTicks = 0;
             builder.buildOpenLitematic(placementIndex);
             if (!builder.isActive()) {
                 stop("Malzemeden sonra Baritone inşaatı yeniden başlatamadı.");
@@ -704,7 +774,7 @@ final class BaritoneBuildBridge {
 
     private static void applyActionSpeed() {
         if (settings == null) return;
-        int delay = Math.max(4, BuildSettings.getActionDelayTicks());
+        int delay = Math.max(1, BuildSettings.getActionDelayTicks());
         settings.rightClickSpeed.value = delay;
         settings.blockBreakSpeed.value = delay;
     }
@@ -754,6 +824,8 @@ final class BaritoneBuildBridge {
         schematicBlockTypes = Set.of();
         unavailableBlockTypes = Set.of();
         inventoryRefreshTicks = 0;
+        remainingScanTicks = 0;
+        remainingScanAvailable = false;
         supplyPhase = SupplyPhase.IDLE;
         customGoal = null;
         returnPosition = null;

@@ -7,18 +7,18 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
 import java.util.Properties;
 
-/** Persistent client-side construction settings. */
+/**
+ * Persistent client-side build speed setting.
+ * Speed level 25 is fastest (one game tick between actions); level 1 is slowest.
+ */
 public final class BuildSettings {
-    private static final double MIN_BLOCKS_PER_SECOND = 0.1D;
-    private static final double MAX_BLOCKS_PER_SECOND = 5.0D;
-    private static final int MIN_ACTION_DELAY_TICKS = 3;
-    private static final int MAX_ACTION_DELAY_TICKS = 199;
-    private static final int DEFAULT_ACTION_DELAY_TICKS = 25;
+    private static final int MIN_SPEED_LEVEL = 1;
+    private static final int MAX_SPEED_LEVEL = 25;
+    private static final int DEFAULT_SPEED_LEVEL = 25;
 
-    private static int actionDelayTicks = DEFAULT_ACTION_DELAY_TICKS;
+    private static int speedLevel = DEFAULT_SPEED_LEVEL;
     private static Path configFile;
     private static boolean loaded;
 
@@ -28,55 +28,58 @@ public final class BuildSettings {
         if (loaded) return;
         loaded = true;
         configFile = FabricLoader.getInstance().getConfigDir().resolve("eyyobuild.properties");
-
         if (!Files.isRegularFile(configFile)) return;
 
         Properties properties = new Properties();
         try (InputStream input = Files.newInputStream(configFile)) {
             properties.load(input);
-            String savedDelay = properties.getProperty("placementDelayTicks");
-            if (savedDelay != null) {
-                actionDelayTicks = clamp(Integer.parseInt(savedDelay.trim()),
-                        MIN_ACTION_DELAY_TICKS, MAX_ACTION_DELAY_TICKS);
+            String savedLevel = properties.getProperty("speedLevel");
+            if (savedLevel != null) {
+                speedLevel = clamp(Integer.parseInt(savedLevel.trim()), MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
+                return;
+            }
+
+            // Migrate settings from 0.12/0.13 alpha builds. Their default was 25
+            // delay ticks, so preserve the new max-speed default for that legacy value.
+            String legacyDelay = properties.getProperty("placementDelayTicks");
+            if (legacyDelay != null) {
+                int oldDelay = Integer.parseInt(legacyDelay.trim());
+                if (oldDelay != 25) {
+                    speedLevel = clamp(26 - oldDelay, MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
+                }
             }
         } catch (IOException | NumberFormatException exception) {
-            System.err.println("[EYYOBUILD] Ayarlar okunamadı; varsayılan değerler kullanılacak: "
+            System.err.println("[EYYOBUILD] Ayarlar okunamadı; varsayılan hız kullanılacak: "
                     + exception.getMessage());
-            actionDelayTicks = DEFAULT_ACTION_DELAY_TICKS;
+            speedLevel = DEFAULT_SPEED_LEVEL;
         }
     }
 
+    /** Baritone's click/block-break delay, in game ticks. */
     public static synchronized int getActionDelayTicks() {
-        return actionDelayTicks;
+        return 26 - speedLevel;
     }
 
     public static synchronized double getSliderValue() {
-        double blocksPerSecond = 20.0D / (actionDelayTicks + 1.0D);
-        return clamp((blocksPerSecond - MIN_BLOCKS_PER_SECOND)
-                / (MAX_BLOCKS_PER_SECOND - MIN_BLOCKS_PER_SECOND), 0.0D, 1.0D);
+        return (double) (speedLevel - MIN_SPEED_LEVEL) / (MAX_SPEED_LEVEL - MIN_SPEED_LEVEL);
     }
 
     public static synchronized void setSliderValue(double value) {
         double normalized = clamp(value, 0.0D, 1.0D);
-        double blocksPerSecond = MIN_BLOCKS_PER_SECOND
-                + normalized * (MAX_BLOCKS_PER_SECOND - MIN_BLOCKS_PER_SECOND);
-        int delay = (int) Math.round(20.0D / blocksPerSecond) - 1;
-        actionDelayTicks = clamp(delay, MIN_ACTION_DELAY_TICKS, MAX_ACTION_DELAY_TICKS);
+        speedLevel = clamp((int) Math.round(MIN_SPEED_LEVEL
+                + normalized * (MAX_SPEED_LEVEL - MIN_SPEED_LEVEL)), MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
     }
 
     public static synchronized String getSpeedLabel() {
-        double blocksPerSecond = 20.0D / (actionDelayTicks + 1.0D);
-        String formatted = String.format(Locale.ROOT, "%.1f", blocksPerSecond).replace('.', ',');
-        return "Hız: " + formatted + " blok/sn";
+        return "Hız: " + speedLevel + " / " + MAX_SPEED_LEVEL;
     }
 
     public static synchronized void save() {
         if (configFile == null) {
             configFile = FabricLoader.getInstance().getConfigDir().resolve("eyyobuild.properties");
         }
-
         Properties properties = new Properties();
-        properties.setProperty("placementDelayTicks", Integer.toString(actionDelayTicks));
+        properties.setProperty("speedLevel", Integer.toString(speedLevel));
         try {
             Files.createDirectories(configFile.getParent());
             try (OutputStream output = Files.newOutputStream(configFile)) {

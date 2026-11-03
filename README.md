@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.13.0-alpha.2
+## Current status — 0.13.0-alpha.3
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -14,9 +14,11 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 - Litematica's selected placement, its enabled subregions, offsets, rotation and mirror are read by Baritone's Litematica integration instead of being reimplemented in EYYOBUILD.
 - Baritone handles A* route planning and execution, obstacle mining, block placement, throwaway scaffolding/bridging, jumps, parkour movement, safe descents, automatic tool selection and moving inventory blocks to the hotbar, subject to Baritone settings and available materials.
 - EYYOBUILD temporarily enables the automation settings needed for construction: breaking, placing, inventory handling, auto-tool, sprinting, parkour and the Baritone builder. Before building, it finds the schematic block types that exist in the player's inventory and temporarily tells Baritone to ignore unavailable types across the entire schematic. The inventory filter is refreshed every 10 ticks, so when one material stack runs out that block type is skipped and Baritone can path to other blocks of types still available, regardless of their Y layer. Newly acquired block types become eligible again while the build is running. Original Baritone settings are restored when the job ends or is stopped.
-- The Baritone builder automatically checks for required block materials in nearby placed chests, trapped chests, barrels and shulker boxes (24-block horizontal radius, 12-block vertical radius). It records each opened container's coordinates and observed contents for the current build session, walks to accessible containers, takes needed block-item stacks through normal container clicks, returns to the previous position and reloads the same Litematica placement so already-built positions stay complete.
+- The Baritone builder asks Baritone's own Litematica adapter for the transformed placement, including enabled subregions, rotation and mirror, then counts only positions whose current world block state still differs from the desired state. It refreshes this remaining-material estimate every 5 seconds while building.
+- When a still-needed material reaches a low inventory reserve, EYYOBUILD searches nearby loaded chunks for placed chests (including trapped chests), barrels and shulker boxes (24-block horizontal radius, 12-block vertical radius). It records opened-container coordinates and observed item counts for the current build session, walks to accessible containers, takes one stack's worth through ordinary container clicks, returns to the saved build position and resumes the same Litematica placement.
+- Material fetching is demand-driven: it aims to replenish a small reserve (up to one stack per block type), rather than trying to fit the whole schematic into the player's inventory. It can make additional supply trips as stacks run low. A QUICK_MOVE may transfer a full source stack, so a small amount of oversupply is possible.
 - Container contents are read only after the server actually opens the container menu. Locked/inaccessible containers, unreachable positions and full-inventory transfers are skipped; this does not bypass permissions or server-side container rules. Storage memory is session-only and is refreshed from live container menus, not treated as permanent truth.
-- The default action delay is **25 ticks** on a fresh config. Change it whenever needed with the speed slider; the slider value is saved locally. It controls Baritone's right-click and block-break delays, not an anti-cheat bypass.
+- The speed slider ranges from **1 to 25**. **25 is fastest** and maps to one game tick between Baritone block actions; 1 is slowest. The value is saved locally. Minecraft still runs on game ticks, so this is not a guarantee of 25 placed blocks per real-world second.
 - The UI shows whether Baritone is walking/building, planning the next action, or paused because it could not find a valid next move.
 
 ## Setup
@@ -30,7 +32,7 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 7. Keep building blocks and some common full-block materials (such as dirt, cobblestone, netherrack or stone) in the inventory for the schematic and any support/scaffolding the route requires.
 8. Click **Başlat** or press **H**. Click **Durdur** or press **H** again to stop.
 
-When a required block type is short, EYYOBUILD checks nearby enabled storage containers, takes matching block-item stacks it can move into the inventory, returns to the saved build position and resumes the same Litematica placement. If no accessible nearby container has the item, it keeps the existing inventory-aware behavior: only unavailable block types are skipped while other available types continue. EYYOBUILD does not craft missing materials.
+When a required block type reaches its low-water reserve, EYYOBUILD checks nearby enabled storage containers, takes matching block-item stacks it can move into the inventory, returns to the saved build position and resumes the same Litematica placement. Remaining requirements are recalculated from the active transformed Litematica placement, not from the original full schematic file. If no accessible nearby container has the item, it keeps the existing inventory-aware behavior: only unavailable block types are skipped while other available types continue. EYYOBUILD does not craft missing materials.
 
 ## Controls
 
