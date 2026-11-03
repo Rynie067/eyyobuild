@@ -2,8 +2,6 @@ package com.rynie.eyyobuild.ui;
 
 import com.rynie.eyyobuild.BuildSettings;
 import com.rynie.eyyobuild.BuilderSession;
-import com.rynie.eyyobuild.ProxySettings;
-import com.rynie.eyyobuild.SecondaryClientLauncher;
 import com.rynie.eyyobuild.schematic.SchematicCatalog;
 import com.rynie.eyyobuild.schematic.SchematicSummary;
 import net.fabricmc.loader.api.FabricLoader;
@@ -11,18 +9,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.MultiLineEditBox;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 public final class EyyobuildScreen extends Screen {
     private Button buildButton;
-    private Button secondaryLaunchButton;
-    private MultiLineEditBox secondaryNickInput;
-    private boolean secondaryLaunchInProgress;
-    private String launchStatus = "";
-    private boolean launchStatusSuccess;
+    private int placementRefreshTicks;
 
     public EyyobuildScreen() {
         super(Component.literal("EYYOBUILD"));
@@ -61,66 +54,24 @@ public final class EyyobuildScreen extends Screen {
                 }
         ).bounds(startX + (buttonWidth + gap) * 3, buttonY, buttonWidth, 20).build());
 
-        this.addRenderableWidget(Button.builder(Component.literal("Kapat"), button -> {
-            this.onClose();
-        }).bounds(startX + (buttonWidth + gap) * 4, buttonY, buttonWidth, 20).build());
+        this.addRenderableWidget(Button.builder(Component.literal("Kapat"), button -> this.onClose())
+                .bounds(startX + (buttonWidth + gap) * 4, buttonY, buttonWidth, 20).build());
 
         int sliderWidth = 460;
         this.addRenderableWidget(new BuildRateSlider(
                 (this.width - sliderWidth) / 2, this.height / 2 + 55, sliderWidth
         ));
-
-        int panelLeft = this.width / 2 - 250;
-        int accountRowY = this.height / 2 + 94;
-        this.secondaryNickInput = MultiLineEditBox.builder()
-                .setX(panelLeft + 20)
-                .setY(accountRowY)
-                .setPlaceholder(Component.literal("Örn. Oyuncu2"))
-                .setShowBackground(true)
-                .setShowDecorations(false)
-                .build(this.font, 150, 20, Component.literal("İkinci hesap nicki"));
-        this.secondaryNickInput.setCharacterLimit(16);
-        this.secondaryNickInput.setLineLimit(1);
-        this.secondaryNickInput.setValue(BuildSettings.getSecondaryAccountNickname());
-        this.addRenderableWidget(this.secondaryNickInput);
-
-        this.secondaryLaunchButton = this.addRenderableWidget(Button.builder(
-                Component.literal("İkinci Oyunu Başlat"),
-                button -> launchSecondaryClient()
-        ).bounds(panelLeft + 224, accountRowY, 256, 20).build());
     }
 
-    private void launchSecondaryClient() {
-        if (secondaryLaunchInProgress || secondaryNickInput == null) return;
-
-        String nickname = secondaryNickInput.getValue().trim();
-        if (!SecondaryClientLauncher.isValidNickname(nickname)) {
-            launchStatus = "Nick 3-16 karakter olmalı (A-Z, 0-9, _).";
-            launchStatusSuccess = false;
-            return;
+    @Override
+    public void tick() {
+        super.tick();
+        if (++placementRefreshTicks >= 20) {
+            placementRefreshTicks = 0;
+            // While the menu is open, disabled/closed Litematica placements disappear automatically.
+            SchematicCatalog.refresh(FabricLoader.getInstance().getGameDir());
         }
-
-        BuildSettings.setSecondaryAccountNickname(nickname);
-        BuildSettings.save();
-        ProxySettings.Snapshot proxy = ProxySettings.snapshot();
-        secondaryLaunchInProgress = true;
-        launchStatus = "İkinci oyun hazırlanıyor...";
-        launchStatusSuccess = true;
-        if (secondaryLaunchButton != null) {
-            secondaryLaunchButton.setMessage(Component.literal("Hazırlanıyor..."));
-        }
-
-        Thread.ofVirtual().name("EYYOBUILD-secondary-client").start(() -> {
-            SecondaryClientLauncher.LaunchResult result = SecondaryClientLauncher.launch(nickname, proxy);
-            Minecraft.getInstance().execute(() -> {
-                launchStatus = result.message();
-                launchStatusSuccess = result.success();
-                secondaryLaunchInProgress = false;
-                if (secondaryLaunchButton != null) {
-                    secondaryLaunchButton.setMessage(Component.literal("İkinci Oyunu Başlat"));
-                }
-            });
-        });
+        updateBuildButton();
     }
 
     private void updateBuildButton() {
@@ -146,31 +97,44 @@ public final class EyyobuildScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
 
         graphics.text(this.font, "EYYOBUILD", left + 20, top + 17, 0xFFFFFFFF, true);
-        graphics.text(this.font, "SCHEMATIC AUTO BUILDER  /  MINECRAFT 26.2", left + 20, top + 35, 0xFFB8C1D1, false);
+        graphics.text(this.font, "LITEMATICA ACTIVE PLACEMENTS  /  MINECRAFT 26.2",
+                left + 20, top + 35, 0xFFB8C1D1, false);
+        graphics.text(this.font, "Açık şematik: " + (SchematicCatalog.size() == 0 ? "0" :
+                        (SchematicCatalog.selectedIndex() + 1) + " / " + SchematicCatalog.size()),
+                left + 20, top + 68, 0xFFB56BFF, true);
 
         SchematicSummary summary = SchematicCatalog.current();
         if (summary == null) {
-            graphics.text(this.font, "Şema bulunamadı.", left + 20, top + 82, 0xFFFFFFFF, true);
-            graphics.text(this.font, ".litematic dosyalarını oyun klasöründeki schematics/ klasörüne koy.", left + 20, top + 104, 0xFFD5DCE8, false);
-            graphics.text(this.font, "Klasör: " + String.valueOf(SchematicCatalog.directory()), left + 20, top + 128, 0xFF9BA8BC, false);
+            graphics.text(this.font, "Açık Litematica şematiği bulunamadı.",
+                    left + 20, top + 101, 0xFFFFFFFF, true);
+            graphics.text(this.font, "Litematica > Schematic Placements bölümünden bir yerleşimi etkinleştir.",
+                    left + 20, top + 124, 0xFFD5DCE8, false);
+            graphics.text(this.font, "Kapalı/devre dışı yerleşimler bu listede gösterilmez.",
+                    left + 20, top + 144, 0xFF9FB4D0, false);
             if (SchematicCatalog.lastError() != null) {
-                graphics.text(this.font, trim(SchematicCatalog.lastError(), 72), left + 20, top + 150, 0xFFFFB7B7, false);
+                graphics.text(this.font, trim(SchematicCatalog.lastError(), 72),
+                        left + 20, top + 169, 0xFFFFB7B7, false);
             }
         } else if (!summary.readable()) {
-            graphics.text(this.font, summary.displayName(), left + 20, top + 82, 0xFFFFFFFF, true);
-            graphics.text(this.font, "Bu şema okunamadı:", left + 20, top + 106, 0xFFFF8E8E, false);
-            graphics.text(this.font, trim(summary.error(), 72), left + 20, top + 126, 0xFFFFB7B7, false);
+            graphics.text(this.font, trim(summary.displayName(), 64), left + 20, top + 101, 0xFFFFFFFF, true);
+            graphics.text(this.font, "Etkin yerleşimin şematik dosyası okunamadı:",
+                    left + 20, top + 124, 0xFFFF8E8E, false);
+            graphics.text(this.font, trim(summary.error(), 72), left + 20, top + 144, 0xFFFFB7B7, false);
+            graphics.text(this.font, trim(String.valueOf(summary.path()), 72),
+                    left + 20, top + 164, 0xFF9FB4D0, false);
         } else {
-            graphics.text(this.font, trim(summary.displayName(), 64), left + 20, top + 76, 0xFFFFFFFF, true);
+            graphics.text(this.font, trim(summary.displayName(), 64), left + 20, top + 100, 0xFFFFFFFF, true);
+            graphics.text(this.font, "Dosya: " + trim(summary.path().getFileName().toString(), 60),
+                    left + 20, top + 122, 0xFF9FB4D0, false);
             graphics.text(this.font,
                     "Boyut: " + summary.width() + " x " + summary.height() + " x " + summary.length(),
-                    left + 20, top + 101, 0xFFD5DCE8, false);
+                    left + 20, top + 144, 0xFFD5DCE8, false);
             graphics.text(this.font,
                     "Yerleştirilecek blok: " + summary.blocks().size() + "  |  Bölge: " + summary.regions().size(),
-                    left + 20, top + 120, 0xFFD5DCE8, false);
+                    left + 20, top + 164, 0xFFD5DCE8, false);
 
-            int lineY = top + 151;
-            for (int i = 0; i < Math.min(summary.regions().size(), 5); i++) {
+            int lineY = top + 187;
+            for (int i = 0; i < Math.min(summary.regions().size(), 3); i++) {
                 SchematicSummary.RegionSummary region = summary.regions().get(i);
                 String line = region.name() + "  " + region.width() + "x" + region.height() + "x"
                         + region.length() + "  |  palet: " + region.paletteEntries();
@@ -180,29 +144,16 @@ public final class EyyobuildScreen extends Screen {
         }
 
         graphics.text(this.font, "Yerleştirme hızı (blok koyma / kırma)",
-                left + 20, top + 211, 0xFFB8C1D1, false);
-        graphics.text(this.font, "İkinci istemci  /  offline nick (3-16 karakter)",
-                left + 20, top + 250, 0xFFB8C1D1, false);
-
+                left + 20, top + 236, 0xFFB8C1D1, false);
         String buildState = BuilderSession.status();
         int stateColor = BuilderSession.isActive() ? 0xFF8FE3B0 : 0xFFFFC58A;
-        graphics.text(this.font, "Durum: " + trim(buildState, 68), left + 20, bottom - 88, stateColor, true);
+        graphics.text(this.font, "Durum: " + trim(buildState, 68), left + 20, bottom - 43, stateColor, true);
         graphics.text(this.font, "B: arayüz  |  H: oto inşaat + hareket aç/kapat",
-                left + 20, bottom - 68, 0xFFB8C1D1, false);
-        graphics.text(this.font, "Proxy için Minecraft ana menüsündeki EYYOBUILD Proxy düğmesini kullan.",
-                left + 20, bottom - 48, 0xFFB8C1D1, false);
-
-        if (!launchStatus.isBlank()) {
-            int statusColor = launchStatusSuccess ? 0xFF8FE3B0 : 0xFFFF9A9A;
-            graphics.text(this.font, trim(launchStatus, 72), left + 20, bottom - 18, statusColor, false);
-        }
+                left + 20, bottom - 24, 0xFFB8C1D1, false);
     }
 
     @Override
     public void removed() {
-        if (secondaryNickInput != null) {
-            BuildSettings.setSecondaryAccountNickname(secondaryNickInput.getValue().trim());
-        }
         BuildSettings.save();
         super.removed();
     }

@@ -2,21 +2,16 @@ package com.rynie.eyyobuild;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.rynie.eyyobuild.schematic.SchematicCatalog;
-import com.rynie.eyyobuild.ui.EyyobuildProxyScreen;
 import com.rynie.eyyobuild.ui.EyyobuildScreen;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
-import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
-import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
-/** Exactly two configurable EYYOBUILD key mappings: UI and build start/stop. */
+/** EYYOBUILD exposes only its main UI and build toggle key mappings. */
 public final class EyyobuildClient implements ClientModInitializer {
     private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
             Identifier.fromNamespaceAndPath("eyyobuild", "main")
@@ -33,18 +28,6 @@ public final class EyyobuildClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         BuildSettings.load();
-
-        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
-            if (screen instanceof TitleScreen) {
-                int buttonWidth = 150;
-                int buttonX = Math.max(8, (screen.width - buttonWidth) / 2);
-                int buttonY = Math.max(8, screen.height - 58);
-                Screens.getWidgets(screen).add(Button.builder(
-                        Component.literal("EYYOBUILD Proxy"),
-                        button -> client.gui.setScreen(new EyyobuildProxyScreen(screen))
-                ).bounds(buttonX, buttonY, buttonWidth, 20).build());
-            }
-        });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (OPEN_UI.consumeClick()) {
