@@ -97,7 +97,7 @@ public final class EyyobuildScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
 
         graphics.text(this.font, "EYYOBUILD", left + 20, top + 17, 0xFFFFFFFF, true);
-        graphics.text(this.font, "LITEMATICA ACTIVE PLACEMENTS  /  MINECRAFT 26.2",
+        graphics.text(this.font, "LITEMATICA + AUTO MATERIAL SUPPLY  /  MINECRAFT 26.2",
                 left + 20, top + 35, 0xFFB8C1D1, false);
         graphics.text(this.font, "Açık şematik: " + (SchematicCatalog.size() == 0 ? "0" :
                         (SchematicCatalog.selectedIndex() + 1) + " / " + SchematicCatalog.size()),
