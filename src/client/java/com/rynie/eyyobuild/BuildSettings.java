@@ -9,13 +9,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
-/** Persistent client-side build speed setting (1..100; 100 is fastest). */
+/** Persistent client-side placement-rate setting (1..20 blocks per second). */
 public final class BuildSettings {
-    private static final int MIN_SPEED_LEVEL = 1;
-    private static final int MAX_SPEED_LEVEL = 100;
-    private static final int DEFAULT_SPEED_LEVEL = 100;
+    private static final int TICKS_PER_SECOND = 20;
+    private static final int MIN_BLOCKS_PER_SECOND = 1;
+    private static final int MAX_BLOCKS_PER_SECOND = TICKS_PER_SECOND;
+    private static final int DEFAULT_BLOCKS_PER_SECOND = MAX_BLOCKS_PER_SECOND;
 
-    private static int speedLevel = DEFAULT_SPEED_LEVEL;
+    private static int blocksPerSecond = DEFAULT_BLOCKS_PER_SECOND;
     private static Path configFile;
     private static boolean loaded;
 
@@ -30,45 +31,62 @@ public final class BuildSettings {
         Properties properties = new Properties();
         try (InputStream input = Files.newInputStream(configFile)) {
             properties.load(input);
-            String savedLevel = properties.getProperty("speedLevel");
-            if (savedLevel != null) {
-                // Migrate the previous 1..25 slider proportionally to the new 1..100 scale.
-                int oldLevel = Integer.parseInt(savedLevel.trim());
-                speedLevel = oldLevel <= 25
-                        ? clamp(oldLevel * 4, MIN_SPEED_LEVEL, MAX_SPEED_LEVEL)
-                        : clamp(oldLevel, MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
+
+            String savedRate = properties.getProperty("blocksPerSecond");
+            if (savedRate != null) {
+                blocksPerSecond = clamp(Integer.parseInt(savedRate.trim()),
+                        MIN_BLOCKS_PER_SECOND, MAX_BLOCKS_PER_SECOND);
                 return;
             }
 
+            // Migrate the previous 1..100 speed slider to an approximate blocks/second rate.
+            String savedLevel = properties.getProperty("speedLevel");
+            if (savedLevel != null) {
+                int oldLevel = Integer.parseInt(savedLevel.trim());
+                blocksPerSecond = clamp((int) Math.round(oldLevel
+                                * (double) MAX_BLOCKS_PER_SECOND / 100.0D),
+                        MIN_BLOCKS_PER_SECOND, MAX_BLOCKS_PER_SECOND);
+                return;
+            }
+
+            // Older builds stored the interaction delay directly in game ticks.
             String legacyDelay = properties.getProperty("placementDelayTicks");
             if (legacyDelay != null) {
-                int oldDelay = Integer.parseInt(legacyDelay.trim());
-                speedLevel = clamp(101 - oldDelay, MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
+                int oldDelay = Math.max(1, Integer.parseInt(legacyDelay.trim()));
+                blocksPerSecond = clamp((int) Math.round(
+                                TICKS_PER_SECOND / (double) oldDelay),
+                        MIN_BLOCKS_PER_SECOND, MAX_BLOCKS_PER_SECOND);
             }
         } catch (IOException | NumberFormatException exception) {
             System.err.println("[EYYOBUILD] Ayarlar okunamadı; varsayılan hız kullanılacak: "
                     + exception.getMessage());
-            speedLevel = DEFAULT_SPEED_LEVEL;
+            blocksPerSecond = DEFAULT_BLOCKS_PER_SECOND;
         }
     }
 
-    /** Baritone's click/block-break delay, in game ticks. */
+    /** Converts the selected target rate to Baritone's minimum whole-game-tick interval. */
     public static synchronized int getActionDelayTicks() {
-        return 101 - speedLevel;
+        return Math.max(1, (TICKS_PER_SECOND + blocksPerSecond - 1) / blocksPerSecond);
+    }
+
+    public static synchronized int getBlocksPerSecond() {
+        return blocksPerSecond;
     }
 
     public static synchronized double getSliderValue() {
-        return (double) (speedLevel - MIN_SPEED_LEVEL) / (MAX_SPEED_LEVEL - MIN_SPEED_LEVEL);
+        return (double) (blocksPerSecond - MIN_BLOCKS_PER_SECOND)
+                / (MAX_BLOCKS_PER_SECOND - MIN_BLOCKS_PER_SECOND);
     }
 
     public static synchronized void setSliderValue(double value) {
         double normalized = clamp(value, 0.0D, 1.0D);
-        speedLevel = clamp((int) Math.round(MIN_SPEED_LEVEL
-                + normalized * (MAX_SPEED_LEVEL - MIN_SPEED_LEVEL)), MIN_SPEED_LEVEL, MAX_SPEED_LEVEL);
+        blocksPerSecond = clamp((int) Math.round(MIN_BLOCKS_PER_SECOND
+                + normalized * (MAX_BLOCKS_PER_SECOND - MIN_BLOCKS_PER_SECOND)),
+                MIN_BLOCKS_PER_SECOND, MAX_BLOCKS_PER_SECOND);
     }
 
     public static synchronized String getSpeedLabel() {
-        return "Hız: " + speedLevel + " / " + MAX_SPEED_LEVEL;
+        return "Blok hızı: " + blocksPerSecond + " blok/sn";
     }
 
     public static synchronized void save() {
@@ -76,7 +94,7 @@ public final class BuildSettings {
             configFile = FabricLoader.getInstance().getConfigDir().resolve("eyyobuild.properties");
         }
         Properties properties = new Properties();
-        properties.setProperty("speedLevel", Integer.toString(speedLevel));
+        properties.setProperty("blocksPerSecond", Integer.toString(blocksPerSecond));
         try {
             Files.createDirectories(configFile.getParent());
             try (OutputStream output = Files.newOutputStream(configFile)) {

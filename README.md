@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.13.0-alpha.4
+## Current status — 0.13.0-alpha.5
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -18,7 +18,7 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 - When a still-needed material reaches a low inventory reserve, EYYOBUILD searches nearby loaded chunks for placed chests (including trapped chests), barrels and shulker boxes (24-block horizontal radius, 12-block vertical radius). It records opened-container coordinates and observed item counts for the current build session, walks to accessible containers, takes one stack's worth through ordinary container clicks, returns to the saved build position and resumes the same Litematica placement.
 - Material fetching is demand-driven: it aims to replenish a small reserve (up to one stack per block type), rather than trying to fit the whole schematic into the player's inventory. It can make additional supply trips as stacks run low. A QUICK_MOVE may transfer a full source stack, so a small amount of oversupply is possible.
 - Container contents are read only after the server actually opens the container menu. Locked/inaccessible containers, unreachable positions and full-inventory transfers are skipped; this does not bypass permissions or server-side container rules. Storage memory is session-only and is refreshed from live container menus, not treated as permanent truth.
-- The speed slider ranges from **1 to 100**. **100 is fastest** and maps to one game tick between Baritone block actions; 1 is slowest. The value is saved locally. Existing 1–25 slider settings are migrated proportionally to the new scale. Minecraft still runs on game ticks, so 100 is not a guarantee of 100 placed blocks per real-world second.
+- The placement-speed slider ranges from **1 to 20 blocks/second**. It sets Baritone's right-click interval in whole game ticks: 20 targets one placement interaction per game tick, while lower rates use longer intervals. The selected rate is saved locally and older speed settings are migrated. This is a target/upper rate, not a guarantee: server cooldowns, TPS, pathing, reach and block-update confirmation can reduce actual placements. Block breaking keeps Baritone's existing break-speed setting.
 - The UI shows whether Baritone is walking/building, planning the next action, or paused because it could not find a valid next move.
 
 ## Setup
@@ -49,7 +49,7 @@ Both keys can be changed in **Options → Controls → Key Binds → EYYOBUILD**
 - EYYOBUILD does **not** bypass anti-cheat, server cooldowns, permissions, region protection, server rules or moderation. Donut SMP, Chicken SMP and any other public server may prohibit automation; use it only where the server permits it. No ban-free or server-compatibility guarantee is made.
 - Advanced Baritone movement such as parkour, scaffold placement and water-bucket descents can be risky in some terrain. Test in a backup/single-player world first and keep valuable items safe.
 - If Baritone cannot find a valid route or construction action, its builder may pause rather than continue blindly. The UI reports the paused state; press **H** to stop.
-- The speed slider cannot force the server to accept an action. Increase the delay when the server is rejecting or throttling interactions.
+- The placement-rate slider cannot force the server to accept an action. Choose a lower blocks/second value when the server is rejecting or throttling placements.
 - EYYOBUILD requires Litematica and at least one enabled placement that points to a readable \`.litematic\` file. Disabled placements and unrelated files in the schematics folder are not listed.
 
 ## Third-party component and licenses

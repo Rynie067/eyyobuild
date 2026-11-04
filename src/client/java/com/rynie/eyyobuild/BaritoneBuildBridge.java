@@ -775,8 +775,8 @@ final class BaritoneBuildBridge {
     private static void applyActionSpeed() {
         if (settings == null) return;
         int delay = Math.max(1, BuildSettings.getActionDelayTicks());
+        // The slider controls placement frequency only; leave Baritone's break speed unchanged.
         settings.rightClickSpeed.value = delay;
-        settings.blockBreakSpeed.value = delay;
     }
 
     private static void finish(String message) {
