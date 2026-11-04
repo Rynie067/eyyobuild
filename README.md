@@ -2,7 +2,7 @@
 
 EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. Its movement, route planning and schematic-building process are powered by the official Baritone 26.2 engine.
 
-## Current status — 0.13.0-alpha.6
+## Current status — 0.13.0-alpha.7
 
 - Fabric 26.2 / Java 25.
 - Exactly two configurable EYYOBUILD key mappings: **B** opens the UI, **H** starts/stops automatic construction.
@@ -18,6 +18,7 @@ EYYOBUILD is a client-side Litematica auto-builder for Minecraft Java **26.2**. 
 - When a still-needed material reaches a low inventory reserve, EYYOBUILD searches nearby loaded chunks for placed chests (including trapped chests), barrels and shulker boxes (24-block horizontal radius, 12-block vertical radius). It records opened-container coordinates and observed item counts for the current build session, walks to accessible containers, takes one stack's worth through ordinary container clicks, returns to the saved build position and resumes the same Litematica placement.
 - Material fetching is demand-driven: it aims to replenish a small reserve (up to one stack per block type), rather than trying to fit the whole schematic into the player's inventory. It can make additional supply trips as stacks run low. A QUICK_MOVE may transfer a full source stack, so a small amount of oversupply is possible.
 - Container contents are read only after the server actually opens the container menu. Locked/inaccessible containers, unreachable positions and full-inventory transfers are skipped; this does not bypass permissions or server-side container rules. Storage memory is session-only and is refreshed from live container menus, not treated as permanent truth.
+- The UI includes a saved **Air Place** toggle. When enabled, if no normal adjacent support face is available, the builder sends a placement interaction targeted at the schematic's air block position instead of constructing temporary support first. This is an experimental mode: vanilla servers or server protections may reject the synthetic target hit, and blocks that require support may still fail. When disabled, the existing safe support/foundation behavior is unchanged.
 - The placement-speed slider ranges from **1 to 100 blocks/second** and the selected value is saved locally. It controls Baritone's right-click interval. The current builder confirms one placement at a time and runs on Minecraft's 20 client ticks per second, so values above 20 are accepted by the slider but currently use the same fastest one-tick interval as 20; they do not produce 100 real placements per second. Actual placement rate can be lower due to server cooldowns, TPS, pathing, reach and block-update confirmation. Block breaking keeps Baritone's existing break-speed setting. Fresh configurations default to 100.
 - The UI shows whether Baritone is walking/building, planning the next action, or paused because it could not find a valid next move.
 

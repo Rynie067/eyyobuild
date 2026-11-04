@@ -15,6 +15,7 @@ import net.minecraft.network.chat.Component;
 
 public final class EyyobuildScreen extends Screen {
     private Button buildButton;
+    private Button airPlaceButton;
     private int placementRefreshTicks;
 
     public EyyobuildScreen() {
@@ -61,6 +62,17 @@ public final class EyyobuildScreen extends Screen {
         this.addRenderableWidget(new BuildRateSlider(
                 (this.width - sliderWidth) / 2, this.height / 2 + 55, sliderWidth
         ));
+
+        int airPlaceWidth = 170;
+        this.airPlaceButton = this.addRenderableWidget(Button.builder(
+                Component.literal("Air Place: " + (BuildSettings.isAirPlaceEnabled() ? "Açık" : "Kapalı")),
+                button -> {
+                    BuildSettings.setAirPlaceEnabled(!BuildSettings.isAirPlaceEnabled());
+                    BuildSettings.save();
+                    updateAirPlaceButton();
+                }
+        ).bounds((this.width - airPlaceWidth) / 2, this.height / 2 + 84,
+                airPlaceWidth, 20).build());
     }
 
     @Override
@@ -77,6 +89,15 @@ public final class EyyobuildScreen extends Screen {
     private void updateBuildButton() {
         if (buildButton != null) {
             buildButton.setMessage(Component.literal(BuilderSession.isActive() ? "Durdur" : "Başlat"));
+        }
+        updateAirPlaceButton();
+    }
+
+    private void updateAirPlaceButton() {
+        if (airPlaceButton != null) {
+            airPlaceButton.setMessage(Component.literal(
+                    "Air Place: " + (BuildSettings.isAirPlaceEnabled() ? "Açık" : "Kapalı")
+            ));
         }
     }
 

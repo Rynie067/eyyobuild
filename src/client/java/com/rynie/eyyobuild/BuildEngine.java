@@ -235,29 +235,48 @@ public final class BuildEngine {
         }
 
         Support support = null;
+        boolean useAirPlace = false;
         if (existing.isAir()) {
             if (!hasAdjacentSupport(client, target)) {
                 releaseAutomationInput(client);
-                if (actionCoolingDown) {
-                    status = "Destek yolu için yerleştirme aralığı bekleniyor...";
+
+                if (BuildSettings.isAirPlaceEnabled()) {
+                    // Air Place uses a normal interaction packet aimed at the target
+                    // position. The server still decides whether that placement is valid.
+                    if (client.player.getEyePosition().distanceToSqr(Vec3.atCenterOf(target)) > REACH_SQUARED) {
+                        moveTowardTarget(client, target);
+                        return;
+                    }
+                    useAirPlace = true;
+                } else {
+                    if (actionCoolingDown) {
+                        status = "Destek yolu için yerleştirme aralığı bekleniyor...";
+                        return;
+                    }
+
+                    // First try a normal temporary foundation immediately beneath the
+                    // schematic block. If the player is still too far away, extend a
+                    // crouched horizontal bridge one supported block at a time.
+                    if (tryPlaceTargetFoundation(client, target)) return;
+                    if (tryBuildBridgeStep(client, target)) return;
+
+                    status = "Güvenli destek yolu kurulamıyor. Şemada kullanılmayan tam bloklardan "
+                            + "bir miktar envanterinde bulundur ve aynı seviyede sağlam zeminde başla.";
                     return;
                 }
-
-                // First try a normal temporary foundation immediately beneath the
-                // schematic block. If the player is still too far away, extend a
-                // crouched horizontal bridge one supported block at a time.
-                if (tryPlaceTargetFoundation(client, target)) return;
-                if (tryBuildBridgeStep(client, target)) return;
-
-                status = "Güvenli destek yolu kurulamıyor. Şemada kullanılmayan tam bloklardan "
-                        + "bir miktar envanterinde bulundur ve aynı seviyede sağlam zeminde başla.";
-                return;
             }
 
-            support = findSupport(client, target, client.player.getEyePosition());
-            if (support == null) {
-                moveTowardTarget(client, target);
-                return;
+            if (!useAirPlace) {
+                support = findSupport(client, target, client.player.getEyePosition());
+                if (support == null) {
+                    if (BuildSettings.isAirPlaceEnabled()
+                            && client.player.getEyePosition().distanceToSqr(Vec3.atCenterOf(target)) <= REACH_SQUARED) {
+                        useAirPlace = true;
+                    } else {
+                        moveTowardTarget(client, target);
+                        return;
+                    }
+                }
             }
         } else if (client.player.getEyePosition().distanceToSqr(Vec3.atCenterOf(target)) > REACH_SQUARED) {
             moveTowardTarget(client, target);
@@ -315,28 +334,44 @@ public final class BuildEngine {
 
         client.player.getInventory().setSelectedSlot(hotbarSlot);
 
-        if (!aimAt(client, support.hitLocation())) {
-            status = "Destek bloğuna bakılıyor...";
-            return;
+        BlockHitResult placementHit;
+        if (useAirPlace) {
+            if (!aimAt(client, Vec3.atCenterOf(target))) {
+                status = "Air Place için hedef bloğa bakılıyor...";
+                return;
+            }
+
+            // The packet targets the air block position itself. Servers may reject
+            // this interaction; normal range/build-height/server checks still apply.
+            placementHit = new BlockHitResult(
+                    Vec3.atCenterOf(target), Direction.UP, target, false
+            );
+        } else {
+            if (!aimAt(client, support.hitLocation())) {
+                status = "Destek bloğuna bakılıyor...";
+                return;
+            }
+
+            // Normal mode requires the real crosshair to hit the adjacent support face.
+            HitResult aimedResult = client.player.pick(4.5D, 1.0F, false);
+            if (!(aimedResult instanceof BlockHitResult aimedBlock)
+                    || aimedBlock.getType() != HitResult.Type.BLOCK
+                    || !aimedBlock.getBlockPos().equals(support.blockPos())
+                    || aimedBlock.getDirection() != support.clickedFace()) {
+                status = "Destek bloğu nişangâhta değil; yerleştirme yapılmadı.";
+                return;
+            }
+            placementHit = aimedBlock;
         }
 
-        // Use the player's real crosshair ray. No synthetic hit result or air placement.
-        HitResult aimedResult = client.player.pick(4.5D, 1.0F, false);
-        if (!(aimedResult instanceof BlockHitResult aimedBlock)
-                || aimedBlock.getType() != HitResult.Type.BLOCK
-                || !aimedBlock.getBlockPos().equals(support.blockPos())
-                || aimedBlock.getDirection() != support.clickedFace()) {
-            status = "Destek bloğu nişangâhta değil; yerleştirme yapılmadı.";
-            return;
-        }
-
-        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, aimedBlock);
+        client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, placementHit);
         actionCooldownTicks = BuildSettings.getActionDelayTicks();
         pendingActionPos = target;
         pendingActionBlock = expectedBlock;
         pendingActionWalkTarget = null;
         pendingActionTicks = 0;
-        status = "Bloka bakarak normal yerleştirme: " + target.toShortString();
+        status = (useAirPlace ? "Air Place denemesi: " : "Bloka bakarak normal yerleştirme: ")
+                + target.toShortString();
     }
 
     /**
@@ -578,6 +613,9 @@ public final class BuildEngine {
     private static boolean isBuildStandPosition(Minecraft client, BlockPos feet, BlockPos target) {
         if (!isWalkable(client, feet)) return false;
         Vec3 eye = new Vec3(feet.getX() + 0.5D, feet.getY() + 1.62D, feet.getZ() + 0.5D);
+        if (BuildSettings.isAirPlaceEnabled()) {
+            return eye.distanceToSqr(Vec3.atCenterOf(target)) <= REACH_SQUARED;
+        }
         return findSupport(client, target, eye) != null;
     }
 

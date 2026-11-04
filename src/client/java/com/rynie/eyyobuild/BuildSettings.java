@@ -17,6 +17,7 @@ public final class BuildSettings {
     private static final int DEFAULT_BLOCKS_PER_SECOND = MAX_BLOCKS_PER_SECOND;
 
     private static int blocksPerSecond = DEFAULT_BLOCKS_PER_SECOND;
+    private static boolean airPlaceEnabled;
     private static Path configFile;
     private static boolean loaded;
 
@@ -31,6 +32,10 @@ public final class BuildSettings {
         Properties properties = new Properties();
         try (InputStream input = Files.newInputStream(configFile)) {
             properties.load(input);
+            String savedAirPlace = properties.getProperty("airPlaceEnabled");
+            if (savedAirPlace != null) {
+                airPlaceEnabled = Boolean.parseBoolean(savedAirPlace.trim());
+            }
 
             // Preserve a rate saved by alpha.5 (which used a 1..20 range).
             String savedRate = properties.getProperty("blocksPerSecond");
@@ -78,6 +83,14 @@ public final class BuildSettings {
         return blocksPerSecond;
     }
 
+    public static synchronized boolean isAirPlaceEnabled() {
+        return airPlaceEnabled;
+    }
+
+    public static synchronized void setAirPlaceEnabled(boolean enabled) {
+        airPlaceEnabled = enabled;
+    }
+
     public static synchronized double getSliderValue() {
         return (double) (blocksPerSecond - MIN_BLOCKS_PER_SECOND)
                 / (MAX_BLOCKS_PER_SECOND - MIN_BLOCKS_PER_SECOND);
@@ -100,6 +113,7 @@ public final class BuildSettings {
         }
         Properties properties = new Properties();
         properties.setProperty("blocksPerSecond", Integer.toString(blocksPerSecond));
+        properties.setProperty("airPlaceEnabled", Boolean.toString(airPlaceEnabled));
         try {
             Files.createDirectories(configFile.getParent());
             try (OutputStream output = Files.newOutputStream(configFile)) {
