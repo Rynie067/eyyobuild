@@ -9,11 +9,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
-/** Persistent client-side placement-rate setting (1..20 blocks per second). */
+/** Persistent client-side requested placement rate (1..100 blocks per second). */
 public final class BuildSettings {
     private static final int TICKS_PER_SECOND = 20;
     private static final int MIN_BLOCKS_PER_SECOND = 1;
-    private static final int MAX_BLOCKS_PER_SECOND = TICKS_PER_SECOND;
+    private static final int MAX_BLOCKS_PER_SECOND = 100;
     private static final int DEFAULT_BLOCKS_PER_SECOND = MAX_BLOCKS_PER_SECOND;
 
     private static int blocksPerSecond = DEFAULT_BLOCKS_PER_SECOND;
@@ -32,6 +32,7 @@ public final class BuildSettings {
         try (InputStream input = Files.newInputStream(configFile)) {
             properties.load(input);
 
+            // Preserve a rate saved by alpha.5 (which used a 1..20 range).
             String savedRate = properties.getProperty("blocksPerSecond");
             if (savedRate != null) {
                 blocksPerSecond = clamp(Integer.parseInt(savedRate.trim()),
@@ -39,12 +40,12 @@ public final class BuildSettings {
                 return;
             }
 
-            // Migrate the previous 1..100 speed slider to an approximate blocks/second rate.
+            // Migrate the previous 1..100 delay slider to its approximate effective rate.
             String savedLevel = properties.getProperty("speedLevel");
             if (savedLevel != null) {
                 int oldLevel = Integer.parseInt(savedLevel.trim());
-                blocksPerSecond = clamp((int) Math.round(oldLevel
-                                * (double) MAX_BLOCKS_PER_SECOND / 100.0D),
+                int oldDelay = Math.max(1, 101 - oldLevel);
+                blocksPerSecond = clamp((int) Math.round(TICKS_PER_SECOND / (double) oldDelay),
                         MIN_BLOCKS_PER_SECOND, MAX_BLOCKS_PER_SECOND);
                 return;
             }
@@ -53,8 +54,7 @@ public final class BuildSettings {
             String legacyDelay = properties.getProperty("placementDelayTicks");
             if (legacyDelay != null) {
                 int oldDelay = Math.max(1, Integer.parseInt(legacyDelay.trim()));
-                blocksPerSecond = clamp((int) Math.round(
-                                TICKS_PER_SECOND / (double) oldDelay),
+                blocksPerSecond = clamp((int) Math.round(TICKS_PER_SECOND / (double) oldDelay),
                         MIN_BLOCKS_PER_SECOND, MAX_BLOCKS_PER_SECOND);
             }
         } catch (IOException | NumberFormatException exception) {
@@ -64,9 +64,14 @@ public final class BuildSettings {
         }
     }
 
-    /** Converts the selected target rate to Baritone's minimum whole-game-tick interval. */
+    /**
+     * Converts the requested rate to Baritone's whole-game-tick interval.
+     * The current builder confirms one placement at a time and runs on 20 client
+     * ticks per second, so requests above 20 use the fastest one-tick interval.
+     */
     public static synchronized int getActionDelayTicks() {
-        return Math.max(1, (TICKS_PER_SECOND + blocksPerSecond - 1) / blocksPerSecond);
+        int effectiveRate = Math.min(blocksPerSecond, TICKS_PER_SECOND);
+        return Math.max(1, (TICKS_PER_SECOND + effectiveRate - 1) / effectiveRate);
     }
 
     public static synchronized int getBlocksPerSecond() {
